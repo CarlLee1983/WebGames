@@ -59,21 +59,22 @@ const styles = `
 `;
 
 export default function FarmPage() {
-  const [state, setState] = useState<FarmState>(() => {
+  const [state, setState] = useState<FarmState | null>(null);
+  const [now, setNow] = useState<number>(0);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  // =========================================================================
+  // 初始化（客戶端專用）
+  // =========================================================================
+
+  useEffect(() => {
     const saved = loadFarmState();
     const initialState = saved ?? createInitialState();
     const currentTime = Date.now();
     const tickedState = applyOfflineTick(initialState, currentTime);
-    return tickedState;
-  });
-  const [now, setNow] = useState<number>(0); // 0 會在 useEffect 中更新
-
-  // =========================================================================
-  // 初始化時間（防止 hydration 錯誤）
-  // =========================================================================
-
-  useEffect(() => {
-    setNow(Date.now());
+    setState(tickedState);
+    setNow(currentTime);
+    setIsHydrated(true);
   }, []);
 
   // =========================================================================
@@ -179,11 +180,11 @@ export default function FarmPage() {
     });
   }, []);
 
-  if (!state) {
+  if (!state || !isHydrated) {
     return (
       <Container>
         <style>{styles}</style>
-        <div className="flex items-center justify-center min-h-screen">
+        <div className="flex items-center justify-center min-h-screen bg-gradient-to-b from-amber-50 to-green-50">
           <div className="text-2xl font-bold font-mono text-amber-900">⏳ 加載遊戲中...</div>
         </div>
       </Container>
