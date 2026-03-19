@@ -31,30 +31,91 @@ import {
 
 const styles = `
   @keyframes pixelBounce {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-3px); }
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-4px) scale(1.05); }
   }
 
   @keyframes pixelGlow {
-    0%, 100% { box-shadow: inset 0 0 0 3px rgba(0,0,0,0.3); }
-    50% { box-shadow: inset 0 0 0 3px rgba(0,0,0,0.1); }
+    0%, 100% {
+      box-shadow: inset 0 0 0 3px rgba(0,0,0,0.3),
+                  0 0 12px rgba(255,215,0,0.6),
+                  0 0 24px rgba(255,215,0,0.3);
+    }
+    50% {
+      box-shadow: inset 0 0 0 3px rgba(0,0,0,0.1),
+                  0 0 20px rgba(255,215,0,0.9),
+                  0 0 32px rgba(255,215,0,0.5);
+    }
+  }
+
+  @keyframes pixelPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.02); }
+  }
+
+  @keyframes slideDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
   }
 
   .pixel-btn {
-    transition: all 0.05s linear;
+    transition: all 0.08s cubic-bezier(0.34, 1.56, 0.64, 1);
+    position: relative;
+  }
+
+  .pixel-btn::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    background: inherit;
+    border-radius: inherit;
+    z-index: -1;
+    opacity: 0;
+    transition: opacity 0.1s;
   }
 
   .pixel-btn:active {
-    transform: translate(1px, 1px);
+    transform: translate(2px, 2px) scale(0.98);
   }
 
   .pixel-btn-primary:hover:not(:active) {
-    filter: brightness(1.1);
-    transform: translateY(-1px);
+    filter: brightness(1.2) saturate(1.1);
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 6px 12px rgba(0,0,0,0.3) !important;
   }
 
   .plot-ready {
-    animation: pixelGlow 1.5s ease-in-out infinite;
+    animation: pixelGlow 1.2s ease-in-out infinite;
+  }
+
+  .stat-card {
+    animation: slideDown 0.4s ease-out;
+  }
+
+  .action-button {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .action-button::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.3);
+    transform: translate(-50%, -50%);
+    transition: width 0.6s, height 0.6s;
+  }
+
+  .action-button:active::after {
+    width: 300px;
+    height: 300px;
   }
 `;
 
@@ -269,56 +330,94 @@ function StatusBar({ state, level, xpToNext, currentSeason }: StatusBarProps) {
   };
 
   return (
-    <div className="bg-gradient-to-br from-amber-100 via-yellow-50 to-amber-50 border-4 border-amber-900 rounded-lg p-5 space-y-4 shadow-lg" style={{
-      boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.5), 0 4px 8px rgba(0,0,0,0.15)',
+    <div className="bg-gradient-to-br from-amber-100 via-yellow-100 to-orange-100 border-6 border-amber-950 rounded-lg p-6 space-y-5 shadow-2xl" style={{
+      boxShadow: `
+        inset 0 2px 0 rgba(255,255,255,0.6),
+        inset 0 -2px 4px rgba(0,0,0,0.1),
+        0 8px 16px rgba(0,0,0,0.2),
+        0 0 20px rgba(255,165,0,0.3)
+      `,
+      background: 'linear-gradient(135deg, #fef3c7 0%, #fef3c7 50%, #fed7aa 100%)',
     }}>
       {/* 第一行：金幣 + 等級 + 天氣 + 季節 */}
-      <div className="flex items-center justify-between gap-3 font-mono text-amber-950">
+      <div className="flex items-center justify-between gap-4 font-mono text-amber-950">
         {/* 金幣 */}
-        <div className="flex items-center gap-2 bg-yellow-200 px-4 py-2 rounded border-3 border-amber-900" style={{
-          boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.5), 0 2px 4px rgba(0,0,0,0.1)',
+        <div className="stat-card flex items-center gap-3 bg-gradient-to-br from-yellow-300 via-yellow-400 to-amber-400 px-5 py-3 rounded-lg border-4 border-amber-900 font-bold" style={{
+          boxShadow: `
+            inset 0 2px 0 rgba(255,255,255,0.6),
+            0 4px 12px rgba(0,0,0,0.2),
+            0 0 8px rgba(255,215,0,0.5)
+          `,
         }}>
-          <span className="text-2xl">💰</span>
-          <span className="font-bold text-lg">{state.player.coins}</span>
+          <span className="text-3xl animate-bounce">💰</span>
+          <span className="text-2xl drop-shadow-lg">{state.player.coins}</span>
         </div>
 
         {/* 等級 */}
-        <div className="flex items-center gap-2 bg-gradient-to-b from-cyan-300 to-blue-300 px-4 py-2 rounded border-3 border-cyan-900" style={{
-          boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.5), 0 2px 4px rgba(0,0,0,0.1)',
+        <div className="stat-card flex items-center gap-3 bg-gradient-to-br from-cyan-400 via-blue-400 to-indigo-400 px-5 py-3 rounded-lg border-4 border-indigo-900 font-bold text-white" style={{
+          boxShadow: `
+            inset 0 2px 0 rgba(255,255,255,0.4),
+            0 4px 12px rgba(0,0,0,0.2),
+            0 0 12px rgba(100,200,255,0.5)
+          `,
         }}>
-          <span className="text-2xl">⭐</span>
-          <span className="font-bold text-lg">Lv.{level}</span>
+          <span className="text-3xl">⭐</span>
+          <span className="text-2xl drop-shadow-lg">Lv.{level}</span>
         </div>
 
         {/* 季節 */}
-        <div className="flex items-center gap-2 bg-green-200 px-3 py-2 rounded border-3 border-green-900 text-sm font-bold">
-          <span className="text-xl">{seasonEmoji[currentSeason]}</span>
-          <span>{seasonName[currentSeason]}</span>
+        <div className="stat-card flex items-center gap-2 bg-gradient-to-br from-green-400 to-emerald-500 px-4 py-3 rounded-lg border-4 border-green-900 text-sm font-bold text-white" style={{
+          boxShadow: `
+            inset 0 2px 0 rgba(255,255,255,0.3),
+            0 4px 12px rgba(0,0,0,0.2),
+            0 0 8px rgba(100,200,100,0.4)
+          `,
+        }}>
+          <span className="text-2xl">{seasonEmoji[currentSeason]}</span>
+          <span className="drop-shadow-lg">{seasonName[currentSeason]}</span>
         </div>
 
         {/* 天氣 */}
-        <div className="flex items-center gap-2 bg-purple-200 px-3 py-2 rounded border-3 border-purple-900 text-sm font-bold">
-          <span className="text-xl">{weatherEmoji[state.weather.current]}</span>
-          <span>{weatherName[state.weather.current]}</span>
+        <div className="stat-card flex items-center gap-2 bg-gradient-to-br from-purple-400 to-pink-400 px-4 py-3 rounded-lg border-4 border-purple-900 text-sm font-bold text-white" style={{
+          boxShadow: `
+            inset 0 2px 0 rgba(255,255,255,0.3),
+            0 4px 12px rgba(0,0,0,0.2),
+            0 0 12px rgba(200,100,200,0.4)
+          `,
+        }}>
+          <span className="text-2xl">{weatherEmoji[state.weather.current]}</span>
+          <span className="drop-shadow-lg">{weatherName[state.weather.current]}</span>
         </div>
       </div>
 
+      {/* 分隔線 */}
+      <div className="h-2 bg-gradient-to-r from-transparent via-amber-900 to-transparent border-t-2 border-b-2 border-amber-900 opacity-50"></div>
+
       {/* 第二行：XP 進度條 */}
       <div className="space-y-2">
-        <div className="flex justify-between text-xs font-mono font-bold text-amber-950">
-          <span>📊 經驗值</span>
-          <span>{xpToNext} XP 到下一級</span>
+        <div className="flex justify-between text-sm font-mono font-bold text-amber-950 drop-shadow-sm">
+          <span className="text-lg">📊 經驗值進度</span>
+          <span className="bg-yellow-300 px-3 py-1 rounded border-2 border-amber-900">{xpToNext} XP 到下一級</span>
         </div>
-        <div className="w-full h-6 bg-amber-300 border-4 border-amber-900 rounded overflow-hidden" style={{
-          boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)',
+        <div className="w-full h-8 bg-gradient-to-b from-amber-300 to-amber-400 border-4 border-amber-900 rounded-lg overflow-hidden" style={{
+          boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2), 0 4px 8px rgba(0,0,0,0.15)',
         }}>
           <div
-            className="h-full bg-gradient-to-r from-green-400 to-green-600 transition-all duration-300"
+            className="h-full bg-gradient-to-r from-green-400 via-green-500 to-green-600 transition-all duration-500 relative"
             style={{
               width: `${((state.player.xp % 100) / 100) * 100}%`,
-              boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.4)',
+              boxShadow: `
+                inset 0 2px 0 rgba(255,255,255,0.5),
+                0 0 16px rgba(100,200,100,0.6)
+              `,
             }}
-          />
+          >
+            {/* 進度條動畫線 */}
+            <div className="absolute inset-0 opacity-50" style={{
+              backgroundImage: 'repeating-linear-gradient(90deg, transparent, transparent 10px, rgba(255,255,255,0.2) 10px, rgba(255,255,255,0.2) 20px)',
+              animation: 'slideDown 1s linear infinite',
+            }}></div>
+          </div>
         </div>
       </div>
     </div>
@@ -338,24 +437,35 @@ interface FarmGridProps {
 function FarmGrid({ state, now, onPlotClick }: FarmGridProps) {
   return (
     <div className="flex justify-center">
-      <div
-        className="gap-2 bg-gradient-to-br from-amber-900 to-amber-950 p-5 rounded-lg border-6 border-amber-950"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: `repeat(${FARM_WIDTH}, 1fr)`,
-          gridTemplateRows: `repeat(${FARM_HEIGHT}, 1fr)`,
-          width: 'fit-content',
-          boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.3), 0 8px 16px rgba(0,0,0,0.2)',
-        }}
-      >
-        {state.plots.map((plot) => (
-          <PlotCell
-            key={plot.id}
-            plot={plot}
-            now={now}
-            onPlotClick={onPlotClick}
-          />
-        ))}
+      <div className="relative">
+        {/* 農田邊框裝飾 */}
+        <div className="absolute -inset-4 bg-gradient-to-br from-amber-900 via-amber-950 to-amber-950 rounded-2xl blur-lg opacity-50 -z-10"></div>
+
+        <div
+          className="gap-3 bg-gradient-to-br from-amber-900 via-amber-950 to-amber-950 p-6 rounded-2xl border-8 border-amber-950"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: `repeat(${FARM_WIDTH}, 1fr)`,
+            gridTemplateRows: `repeat(${FARM_HEIGHT}, 1fr)`,
+            width: 'fit-content',
+            boxShadow: `
+              inset 0 2px 4px rgba(0,0,0,0.5),
+              inset 0 -4px 8px rgba(0,0,0,0.3),
+              0 12px 24px rgba(0,0,0,0.4),
+              0 0 30px rgba(139,69,19,0.4)
+            `,
+            backgroundImage: 'repeating-linear-gradient(90deg, transparent, transparent 88px, rgba(0,0,0,0.2) 88px, rgba(0,0,0,0.2) 91px)',
+          }}
+        >
+          {state.plots.map((plot) => (
+            <PlotCell
+              key={plot.id}
+              plot={plot}
+              now={now}
+              onPlotClick={onPlotClick}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -376,11 +486,11 @@ function PlotCell({ plot, now, onPlotClick }: PlotCellProps) {
     return (
       <button
         disabled
-        className="w-20 h-20 bg-gradient-to-br from-gray-400 to-gray-600 border-4 border-gray-700 flex items-center justify-center cursor-not-allowed opacity-60 font-bold text-3xl rounded-sm shadow-md hover:opacity-60 transition-opacity"
+        className="w-20 h-20 bg-gradient-to-br from-gray-400 via-gray-500 to-gray-700 border-4 border-gray-800 flex items-center justify-center cursor-not-allowed opacity-50 font-bold text-3xl rounded-lg shadow-lg hover:opacity-50 transition-opacity"
         style={{
-          boxShadow: 'inset 0 2px 4px rgba(255,255,255,0.2), 0 4px 8px rgba(0,0,0,0.3)',
+          boxShadow: 'inset 0 2px 4px rgba(255,255,255,0.1), 0 4px 8px rgba(0,0,0,0.4)',
         }}
-        title="已鎖定"
+        title="已鎖定 - 需要農田擴充"
       >
         🔒
       </button>
@@ -388,12 +498,12 @@ function PlotCell({ plot, now, onPlotClick }: PlotCellProps) {
   }
 
   const crop = plot.cropId ? CROP_DEFS[plot.cropId] : null;
-  let bgGradient = 'from-amber-700 to-amber-900'; // 空地
+  let bgGradient = 'from-amber-700 to-amber-900';
   let borderColor = 'border-amber-950';
-  let shadowColor = 'inset 0 2px 4px rgba(255,255,255,0.1), 0 4px 8px rgba(0,0,0,0.4)';
   let displayContent = '';
   let hoverText = '';
   let isReady = false;
+  let glowColor = '';
 
   if (plot.status === 'empty') {
     displayContent = '🌍';
@@ -406,7 +516,7 @@ function PlotCell({ plot, now, onPlotClick }: PlotCellProps) {
   } else if (plot.status === 'wilted') {
     displayContent = '💀';
     hoverText = '點擊清除';
-    bgGradient = 'from-gray-600 to-gray-800';
+    bgGradient = 'from-gray-600 via-gray-700 to-gray-800';
     borderColor = 'border-gray-900';
   } else if (crop) {
     if (plot.status === 'seeded' || plot.status === 'growing') {
@@ -415,19 +525,22 @@ function PlotCell({ plot, now, onPlotClick }: PlotCellProps) {
       const countdown = msUntilNextWater(plot, crop, now);
 
       if (canWaterNow) {
-        hoverText = `${crop.name} - ${plot.waterCount}/${crop.waterNeeded} 澆水 (可澆)`;
+        hoverText = `${crop.name} - ${plot.waterCount}/${crop.waterNeeded} 澆水 (可澆！)`;
+        bgGradient = 'from-green-500 via-green-600 to-green-700';
+        glowColor = '0 0 16px rgba(100,200,100,0.6)';
       } else {
         hoverText = `${crop.name} - ${plot.waterCount}/${crop.waterNeeded} 澆水 (${formatCountdown(countdown)})`;
+        bgGradient = 'from-green-500 to-green-700';
       }
 
-      bgGradient = 'from-green-500 to-green-700';
       borderColor = 'border-green-900';
     } else if (plot.status === 'ready') {
-      bgGradient = 'from-yellow-400 to-yellow-500';
+      bgGradient = 'from-yellow-400 via-yellow-500 to-orange-400';
       borderColor = 'border-yellow-800';
       displayContent = crop.emoji;
       hoverText = `${crop.name} - 就緒！點擊收成`;
       isReady = true;
+      glowColor = '0 0 24px rgba(255,215,0,0.8)';
     }
   }
 
@@ -436,15 +549,19 @@ function PlotCell({ plot, now, onPlotClick }: PlotCellProps) {
       onClick={() => onPlotClick(plot.id)}
       title={hoverText}
       className={`
-        pixel-btn pixel-btn-primary w-20 h-20 text-3xl font-bold
+        pixel-btn pixel-btn-primary w-20 h-20 text-3xl font-black
         flex items-center justify-center cursor-pointer
-        rounded-sm border-4 transition-all duration-75
-        bg-gradient-to-b ${bgGradient} ${borderColor}
+        rounded-lg border-4 transition-all duration-75
+        bg-gradient-to-br ${bgGradient} ${borderColor}
         ${isReady ? 'plot-ready' : ''}
-        hover:brightness-110 active:translate-x-1 active:translate-y-1
+        hover:brightness-110 hover:scale-105 active:scale-95
       `}
       style={{
-        boxShadow: shadowColor,
+        boxShadow: `
+          inset 0 2px 4px rgba(255,255,255,0.2),
+          0 4px 8px rgba(0,0,0,0.3),
+          ${glowColor}
+        `,
       }}
     >
       {displayContent}
@@ -469,54 +586,75 @@ function ActionPanel({ state, selectedSeedId, onSelectSeed, onSellCrop }: Action
   );
 
   return (
-    <div className="bg-gradient-to-b from-amber-100 to-yellow-50 border-4 border-amber-900 rounded-lg p-5 space-y-5" style={{
-      boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.5), 0 4px 8px rgba(0,0,0,0.15)',
+    <div className="bg-gradient-to-b from-amber-100 via-yellow-100 to-orange-50 border-6 border-amber-950 rounded-lg p-6 space-y-6 shadow-2xl" style={{
+      boxShadow: `
+        inset 0 2px 0 rgba(255,255,255,0.6),
+        inset 0 -2px 4px rgba(0,0,0,0.1),
+        0 8px 16px rgba(0,0,0,0.2)
+      `,
     }}>
       {/* 種子選擇 */}
-      <div className="space-y-3">
-        <h3 className="font-bold text-amber-950 font-mono text-lg" style={{
-          textShadow: '1px 1px 0 rgba(255,255,255,0.5)',
+      <div className="space-y-4">
+        <h3 className="font-black text-amber-950 font-mono text-2xl drop-shadow-lg flex items-center gap-2" style={{
+          textShadow: '2px 2px 0 rgba(255,255,255,0.7)',
         }}>
           📦 選擇種子
+          <span className="text-sm bg-orange-500 text-white px-2 py-1 rounded-full font-bold">Lv.{Math.max(...availableCrops.map(c => c.levelRequired))}</span>
         </h3>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-3">
           {availableCrops.map((crop) => (
             <button
               key={crop.id}
               onClick={() => onSelectSeed(crop.id)}
               className={`
-                pixel-btn pixel-btn-primary px-4 py-2 rounded-sm border-3 font-mono text-sm font-bold
-                transition-all duration-75 cursor-pointer
+                action-button pixel-btn pixel-btn-primary px-5 py-3 rounded-lg border-4 font-mono font-bold text-base
+                transition-all duration-100 cursor-pointer relative
                 ${
                   selectedSeedId === crop.id
-                    ? 'bg-gradient-to-b from-green-500 to-green-600 border-green-900 text-white shadow-md'
-                    : 'bg-gradient-to-b from-amber-300 to-amber-400 border-amber-900 text-amber-950 hover:from-amber-200 hover:to-amber-300'
+                    ? 'bg-gradient-to-br from-green-500 via-green-600 to-emerald-600 border-green-900 text-white'
+                    : 'bg-gradient-to-br from-orange-300 via-yellow-400 to-amber-400 border-amber-900 text-amber-950 hover:from-orange-200 hover:via-yellow-300 hover:to-amber-300'
                 }
               `}
               style={{
                 boxShadow: selectedSeedId === crop.id
-                  ? 'inset 0 2px 0 rgba(255,255,255,0.3), 0 2px 4px rgba(0,0,0,0.2)'
-                  : 'inset 0 2px 0 rgba(255,255,255,0.5), 0 2px 4px rgba(0,0,0,0.1)',
+                  ? `
+                    inset 0 2px 0 rgba(255,255,255,0.3),
+                    0 6px 12px rgba(0,0,0,0.3),
+                    0 0 16px rgba(100,200,100,0.5)
+                  `
+                  : `
+                    inset 0 2px 0 rgba(255,255,255,0.6),
+                    0 4px 8px rgba(0,0,0,0.15)
+                  `,
               }}
               title={`需求等級: ${crop.levelRequired} | 購買: ${crop.buyPrice}💰 | 售價: ${crop.sellPrice}💰 | XP: +${crop.xpReward}`}
             >
-              {crop.emoji} {crop.name}
+              <span className="text-2xl">{crop.emoji}</span>
+              <span className="drop-shadow-lg">{crop.name}</span>
             </button>
           ))}
         </div>
       </div>
 
+      {/* 分隔線 */}
+      <div className="h-1 bg-gradient-to-r from-transparent via-amber-900 to-transparent opacity-50"></div>
+
       {/* 庫存與販賣 */}
-      <div className="space-y-3">
-        <h3 className="font-bold text-amber-950 font-mono text-lg" style={{
-          textShadow: '1px 1px 0 rgba(255,255,255,0.5)',
+      <div className="space-y-4">
+        <h3 className="font-black text-amber-950 font-mono text-2xl drop-shadow-lg" style={{
+          textShadow: '2px 2px 0 rgba(255,255,255,0.7)',
         }}>
-          🎒 庫存
+          🎒 庫存收穫
         </h3>
         {Object.keys(state.inventory).length === 0 ? (
-          <p className="text-sm text-amber-800 italic font-mono">（尚無物品，收成後會出現）</p>
+          <div className="text-center py-6 bg-white bg-opacity-50 rounded-lg border-4 border-dashed border-amber-400">
+            <p className="text-lg text-amber-800 italic font-mono font-bold">
+              🌱 尚無物品<br/>
+              <span className="text-sm">收成後會出現在這裡</span>
+            </p>
+          </div>
         ) : (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-3">
             {Object.entries(state.inventory).map(([cropId, count]) => {
               const crop = CROP_DEFS[cropId];
               if (!crop || count === 0) return null;
@@ -524,13 +662,19 @@ function ActionPanel({ state, selectedSeedId, onSelectSeed, onSellCrop }: Action
                 <button
                   key={cropId}
                   onClick={() => onSellCrop(cropId)}
-                  className="pixel-btn pixel-btn-primary px-4 py-2 rounded-sm border-3 border-yellow-900 bg-gradient-to-b from-yellow-300 to-yellow-400 text-amber-950 font-mono text-sm font-bold hover:from-yellow-200 hover:to-yellow-300 transition-all duration-75"
+                  className="action-button pixel-btn pixel-btn-primary px-5 py-3 rounded-lg border-4 border-orange-900 bg-gradient-to-br from-yellow-300 via-yellow-400 to-orange-400 text-amber-950 font-mono font-bold text-base hover:from-yellow-200 hover:via-yellow-300 hover:to-orange-300 transition-all duration-100 relative"
                   style={{
-                    boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.5), 0 2px 4px rgba(0,0,0,0.1)',
+                    boxShadow: `
+                      inset 0 2px 0 rgba(255,255,255,0.6),
+                      0 4px 12px rgba(0,0,0,0.15),
+                      0 0 12px rgba(255,200,100,0.4)
+                    `,
                   }}
                   title={`販賣 1 個 ${crop.name} 得 ${crop.sellPrice} 金幣`}
                 >
-                  {crop.emoji} ×{count} → +{crop.sellPrice}💰
+                  <span className="text-2xl">{crop.emoji}</span>
+                  <span className="drop-shadow-lg">×{count}</span>
+                  <span className="text-yellow-600 font-black drop-shadow-lg">+{crop.sellPrice}💰</span>
                 </button>
               );
             })}
@@ -539,15 +683,23 @@ function ActionPanel({ state, selectedSeedId, onSelectSeed, onSellCrop }: Action
       </div>
 
       {/* 遊戲教學 */}
-      <div className="text-xs text-amber-900 font-mono bg-white bg-opacity-70 border-3 border-amber-900 p-3 rounded-sm space-y-1" style={{
-        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.5)',
+      <div className="text-sm font-mono bg-gradient-to-br from-blue-200 to-blue-100 border-4 border-blue-900 p-4 rounded-lg space-y-2 text-blue-950 font-bold" style={{
+        boxShadow: `
+          inset 0 2px 0 rgba(255,255,255,0.6),
+          0 4px 8px rgba(0,0,0,0.1),
+          0 0 12px rgba(100,150,255,0.3)
+        `,
       }}>
-        <p className="font-bold text-amber-950">📖 遊戲流程：</p>
-        <p>① 點擊空地 → 翻土</p>
-        <p>② 選擇種子 → 點擊翻好的地 → 播種</p>
-        <p>③ 等待冷卻 → 點擊 → 澆水</p>
-        <p>④ 澆水次數足夠 → 點擊 → 收成</p>
-        <p className="text-amber-800 mt-2">💡 雨天澆水有加倍效果！</p>
+        <p className="text-lg drop-shadow-sm">📖 遊戲流程</p>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="bg-white bg-opacity-50 p-2 rounded border-2 border-blue-900">① 點擊空地<br/>→ 翻土</div>
+          <div className="bg-white bg-opacity-50 p-2 rounded border-2 border-blue-900">② 選擇種子<br/>→ 播種</div>
+          <div className="bg-white bg-opacity-50 p-2 rounded border-2 border-blue-900">③ 等待冷卻<br/>→ 澆水</div>
+          <div className="bg-white bg-opacity-50 p-2 rounded border-2 border-blue-900">④ 達成目標<br/>→ 收成</div>
+        </div>
+        <div className="bg-yellow-200 border-2 border-yellow-700 p-2 rounded text-yellow-900 font-black text-xs text-center">
+          💡 雨天澆水有加倍效果！ ⚡
+        </div>
       </div>
     </div>
   );
