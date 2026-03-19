@@ -472,33 +472,128 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: Player) {
     ctx.scale(-1, 1);
   }
 
-  // 隨便畫個小圓人 (類似大番薯)
-  ctx.fillStyle = "#facc15"; // Yellow body
+  const isFalling = p.groundedPlatformId === null;
+  const isWalking = !isFalling && p.vx !== 0;
+  
+  // Animation cycle (0 or 1)
+  const animFrame = isWalking ? Math.floor(Date.now() / 120) % 2 : 0;
+
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  // 手臂與腿的參數
+  let leftArmRot = isFalling ? -Math.PI * 0.8 : (isWalking ? (animFrame === 0 ? 0.3 : -0.3) : 0);
+  let rightArmRot = isFalling ? -Math.PI * 0.8 : (isWalking ? (animFrame === 0 ? -0.3 : 0.3) : 0);
+  let leftLegRot = isFalling ? -0.2 : (isWalking ? (animFrame === 0 ? -0.4 : 0.4) : 0);
+  let rightLegRot = isFalling ? 0.4 : (isWalking ? (animFrame === 0 ? 0.4 : -0.4) : 0);
+
+  // 繪製背景側的手腳 (Left = 後方)
+  ctx.lineWidth = 4;
+  
+  // 左腿 (後)
+  ctx.strokeStyle = "#1e3a8a"; // dark blue pants
   ctx.beginPath();
-  ctx.ellipse(0, 0, PLAYER_WIDTH / 2, PLAYER_HEIGHT / 2, 0, 0, Math.PI * 2);
+  ctx.moveTo(0, 8);
+  ctx.lineTo(Math.sin(leftLegRot) * 8, 8 + Math.cos(leftLegRot) * 8);
+  ctx.stroke();
+  // 左腳底
+  ctx.fillStyle = "#78350f";
+  ctx.beginPath();
+  ctx.arc(Math.sin(leftLegRot) * 8 + 2, 8 + Math.cos(leftLegRot) * 8, 2, 0, Math.PI*2);
   ctx.fill();
 
-  // 邊框
-  ctx.strokeStyle = "#ca8a04";
-  ctx.lineWidth = 2;
+  // 左手 (後)
+  ctx.strokeStyle = "#60a5fa"; // lighter blue sleeve
+  ctx.beginPath();
+  ctx.moveTo(0, -2);
+  ctx.lineTo(Math.sin(leftArmRot) * 8, -2 + Math.cos(leftArmRot) * 8);
   ctx.stroke();
 
-  // 眼睛
+  // 身體 (Shirt)
+  ctx.fillStyle = "#3b82f6";
+  ctx.beginPath();
+  ctx.roundRect(-6, -4, 12, 14, 4);
+  ctx.fill();
+  
+  // 繪製前景側的手腳 (Right = 前方)
+  // 右腿 (前)
+  ctx.strokeStyle = "#1e40af"; 
+  ctx.beginPath();
+  ctx.moveTo(0, 8);
+  ctx.lineTo(Math.sin(rightLegRot) * 8, 8 + Math.cos(rightLegRot) * 8);
+  ctx.stroke();
+  // 右腳底
+  ctx.fillStyle = "#b45309";
+  ctx.beginPath();
+  ctx.arc(Math.sin(rightLegRot) * 8 + 2, 8 + Math.cos(rightLegRot) * 8, 2, 0, Math.PI*2);
+  ctx.fill();
+
+  // 右手 (前)
+  ctx.strokeStyle = "#2563eb"; 
+  ctx.beginPath();
+  ctx.moveTo(0, -2);
+  ctx.lineTo(Math.sin(rightArmRot) * 8, -2 + Math.cos(rightArmRot) * 8);
+  ctx.stroke();
+  // 膚色手掌
+  ctx.fillStyle = "#fcd34d";
+  ctx.beginPath();
+  ctx.arc(Math.sin(rightArmRot) * 8, -2 + Math.cos(rightArmRot) * 8, 2.5, 0, Math.PI*2);
+  ctx.fill();
+
+  // 頭部
+  ctx.fillStyle = "#fcd34d"; // skin
+  ctx.beginPath();
+  ctx.arc(0, -10, 7, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // 頭髮
+  ctx.fillStyle = "#451a03"; // dark brown
+  ctx.beginPath();
+  ctx.arc(0, -11, 7.5, Math.PI, Math.PI * 2); // top half
+  // 亂髮
+  ctx.lineTo(6, -8);
+  ctx.lineTo(4, -10);
+  ctx.lineTo(0, -8);
+  ctx.lineTo(-4, -10);
+  ctx.lineTo(-6, -8);
+  ctx.closePath();
+  ctx.fill();
+
+  // 臉部表情:
+  // 眼睛: 看向正前方 (right) 所以在 X 大於 0
   ctx.fillStyle = "#000";
-  ctx.beginPath(); ctx.arc(4, -4, 3, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(12, -4, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 1;
+  if (p.hurtTimer > 0) {
+    // 痛痛眼 (X)
+    ctx.beginPath(); ctx.moveTo(2, -13); ctx.lineTo(4, -9); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(4, -13); ctx.lineTo(2, -9); ctx.stroke();
+    
+    ctx.beginPath(); ctx.moveTo(6, -13); ctx.lineTo(8, -9); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(8, -13); ctx.lineTo(6, -9); ctx.stroke();
+  } else if (isFalling) {
+    // 驚恐掉落眼 (大)
+    ctx.beginPath(); ctx.arc(3, -11, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(7, -11, 1.5, 0, Math.PI * 2); ctx.fill();
+  } else {
+    // 正常眼睛
+    ctx.beginPath(); ctx.arc(4, -11, 1, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(8, -11, 1, 0, Math.PI * 2); ctx.fill();
+  }
 
   // 嘴巴
-  ctx.strokeStyle = "#000";
   ctx.beginPath();
   if (p.hurtTimer > 0) {
-    // 痛
-    ctx.arc(8, 4, 3, Math.PI, 0); 
+    // 痛嘴
+    ctx.moveTo(3, -7); ctx.lineTo(7, -6); ctx.lineTo(3, -5); ctx.stroke();
+  } else if (isFalling) {
+    // 驚恐嘴 'O'
+    ctx.arc(5, -6, 1.5, 0, Math.PI * 2); ctx.fill();
   } else {
     // 微笑
-    ctx.arc(8, 4, 3, 0, Math.PI);
+    ctx.arc(5, -7, 2, 0.2, Math.PI * 0.8);
+    ctx.stroke();
   }
-  ctx.stroke();
 
   ctx.restore();
 }

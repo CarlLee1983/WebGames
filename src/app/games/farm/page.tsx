@@ -26,96 +26,58 @@ import {
 } from './utils';
 
 // ============================================================================
-// 全局樣式
+// 全局樣式（8bit 復古風格）
 // ============================================================================
 
 const styles = `
-  @keyframes pixelBounce {
-    0%, 100% { transform: translateY(0) scale(1); }
-    50% { transform: translateY(-4px) scale(1.05); }
+  /* 調色板：NES 綠 + 棕 + 灰 + 黑 */
+  :root {
+    --pixel-dark: #1a1a1a;
+    --pixel-brown: #8b4513;
+    --pixel-green: #2d5016;
+    --pixel-light-green: #6ec34d;
+    --pixel-yellow: #ffd700;
+    --pixel-gray: #808080;
   }
 
-  @keyframes pixelGlow {
-    0%, 100% {
-      box-shadow: inset 0 0 0 3px rgba(0,0,0,0.3),
-                  0 0 12px rgba(255,215,0,0.6),
-                  0 0 24px rgba(255,215,0,0.3);
-    }
-    50% {
-      box-shadow: inset 0 0 0 3px rgba(0,0,0,0.1),
-                  0 0 20px rgba(255,215,0,0.9),
-                  0 0 32px rgba(255,215,0,0.5);
-    }
+  @keyframes blink {
+    0%, 49%, 100% { opacity: 1; }
+    50%, 99% { opacity: 0.7; }
   }
 
-  @keyframes pixelPulse {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.02); }
-  }
-
-  @keyframes slideDown {
-    from { opacity: 0; transform: translateY(-10px); }
-    to { opacity: 1; transform: translateY(0); }
+  @keyframes pixelFlash {
+    0%, 100% { background-color: var(--pixel-light-green); }
+    50% { background-color: var(--pixel-yellow); }
   }
 
   .pixel-btn {
-    transition: all 0.08s cubic-bezier(0.34, 1.56, 0.64, 1);
-    position: relative;
-  }
-
-  .pixel-btn::before {
-    content: '';
-    position: absolute;
-    top: -2px;
-    left: -2px;
-    right: -2px;
-    bottom: -2px;
-    background: inherit;
-    border-radius: inherit;
-    z-index: -1;
-    opacity: 0;
-    transition: opacity 0.1s;
+    image-rendering: pixelated;
+    transition: none;
+    cursor: pointer;
+    user-select: none;
   }
 
   .pixel-btn:active {
-    transform: translate(2px, 2px) scale(0.98);
+    transform: translate(1px, 1px);
   }
 
-  .pixel-btn-primary:hover:not(:active) {
-    filter: brightness(1.2) saturate(1.1);
-    transform: translateY(-2px) scale(1.02);
-    box-shadow: 0 6px 12px rgba(0,0,0,0.3) !important;
+  .pixel-btn:hover {
+    filter: brightness(1.1);
   }
 
   .plot-ready {
-    animation: pixelGlow 1.2s ease-in-out infinite;
+    animation: pixelFlash 0.8s step-start infinite;
+    box-shadow: inset 0 0 0 2px var(--pixel-yellow), 0 0 4px var(--pixel-yellow);
   }
 
-  .stat-card {
-    animation: slideDown 0.4s ease-out;
+  .stat-badge {
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    letter-spacing: 1px;
   }
 
-  .action-button {
-    position: relative;
-    overflow: hidden;
-  }
-
-  .action-button::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 0;
-    height: 0;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.3);
-    transform: translate(-50%, -50%);
-    transition: width 0.6s, height 0.6s;
-  }
-
-  .action-button:active::after {
-    width: 300px;
-    height: 300px;
+  body {
+    image-rendering: pixelated;
   }
 `;
 
@@ -259,16 +221,21 @@ export default function FarmPage() {
   return (
     <Container>
       <style>{styles}</style>
-      <div className="py-6 px-4 space-y-6 bg-gradient-to-b from-amber-50 to-green-50 min-h-screen">
+      <div className="py-6 px-4 space-y-6 min-h-screen" style={{
+        backgroundColor: '#2d5016',
+        backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 8px, rgba(45,80,22,0.3) 8px, rgba(45,80,22,0.3) 16px), repeating-linear-gradient(90deg, transparent, transparent 8px, rgba(45,80,22,0.3) 8px, rgba(45,80,22,0.3) 16px)',
+      }}>
         {/* 標題 */}
         <div className="text-center mb-8">
-          <h1 className="text-5xl font-black font-mono text-amber-950 drop-shadow-lg" style={{
-            textShadow: '3px 3px 0 rgba(0,0,0,0.2)',
-            letterSpacing: '2px'
+          <h1 className="text-5xl font-black font-mono text-yellow-300" style={{
+            textShadow: '2px 2px 0 #000, 4px 4px 0 rgba(0,0,0,0.5)',
+            letterSpacing: '3px'
           }}>
-            🌾 像素農場
+            🌾 PIXEL FARM 🌾
           </h1>
-          <p className="text-sm font-bold text-amber-800 mt-2 font-mono">⬇ 種植 • 澆水 • 收成 ⬇</p>
+          <p className="text-lg font-bold text-yellow-200 mt-2 font-mono" style={{
+            textShadow: '1px 1px 0 #000'
+          }}>— PLANT • WATER • HARVEST —</p>
         </div>
 
         {/* 狀態條 */}
