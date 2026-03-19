@@ -21,6 +21,15 @@ export const GAME_REGISTRY: GameDef[] = [
     status: 'published',
   },
   {
+    id: "lights-out",
+    title: "Lights Out",
+    description: "A logic puzzle where you must turn off all the lights. Clicking one toggles its neighbors!",
+    icon: "i-ph-lightbulb-filament-duotone",
+    href: "/games/lights-out",
+    color: "bg-yellow-500",
+    status: 'published',
+  },
+  {
     id: "tetris",
     title: "Tetris",
     description: "Stack the falling blocks to clear lines and score points. Don't let them reach the top!",
