@@ -299,7 +299,7 @@ export function seedPlot(state: FarmState, plotId: number, cropId: string): Farm
           status: 'seeded' as const,
           cropId,
           waterCount: 0,
-          lastWateredAt: now,
+          lastWateredAt: 0, // Allow immediate first watering
           plantedAt: now,
         }
       : p

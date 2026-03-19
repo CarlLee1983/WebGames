@@ -26,58 +26,187 @@ import {
 } from './utils';
 
 // ============================================================================
-// 全局樣式（8bit 復古風格）
+// 全局樣式（16-bit 超任風格 / SNES Style）
 // ============================================================================
 
 const styles = `
-  /* 調色板：NES 綠 + 棕 + 灰 + 黑 */
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
   :root {
-    --pixel-dark: #1a1a1a;
-    --pixel-brown: #8b4513;
-    --pixel-green: #2d5016;
-    --pixel-light-green: #6ec34d;
-    --pixel-yellow: #ffd700;
-    --pixel-gray: #808080;
+    --snes-bg: #4a90e2; /* Sky blue */
+    --snes-panel-bg: #2b3044;
+    --snes-panel-border: #f8f8f8;
+    --snes-button-outline: #222222;
+    --snes-button-top: #eaeaea;
+    --snes-button-bottom: #a2a2a2;
+    --snes-wood-bg: #8c5a35;
+    --snes-wood-border: #4d2d14;
+    
+    --snes-grass-dark: #3b8a3e;
+    --snes-grass-light: #5db944;
+    --snes-dirt-tilled: #5a3118;
+    --snes-dirt-dry: #A66C41;
   }
 
-  @keyframes blink {
-    0%, 49%, 100% { opacity: 1; }
-    50%, 99% { opacity: 0.7; }
+  .snes-font {
+    font-family: 'Press Start 2P', 'Courier New', monospace;
+    text-transform: uppercase;
+    line-height: 1.4;
   }
 
-  @keyframes pixelFlash {
-    0%, 100% { background-color: var(--pixel-light-green); }
-    50% { background-color: var(--pixel-yellow); }
+  .snes-text-shadow {
+    text-shadow: 2px 2px 0px #000;
   }
 
-  .pixel-btn {
-    image-rendering: pixelated;
-    transition: none;
+  .snes-panel {
+    background: linear-gradient(135deg, #1b2762 0%, #000c42 100%);
+    border: 4px solid #fff;
+    border-radius: 8px;
+    box-shadow: inset 0 0 0 2px #5f6eb3, 4px 4px 0px rgba(0,0,0,0.5);
+    color: white;
+    padding: 16px;
+  }
+
+  .snes-wood-panel {
+    background-color: var(--snes-wood-bg);
+    background-image:
+      linear-gradient(90deg, rgba(0,0,0,0.1) 2px, transparent 2px),
+      linear-gradient(0deg, rgba(0,0,0,0.1) 2px, transparent 2px);
+    background-size: 16px 16px;
+    border: 4px solid var(--snes-wood-border);
+    box-shadow: inset 0 0 8px rgba(0,0,0,0.5), 4px 4px 0px rgba(0,0,0,0.4);
+    color: #fff;
+  }
+
+  .snes-button {
+    background: linear-gradient(to bottom, var(--snes-button-top) 0%, var(--snes-button-bottom) 100%);
+    border: 3px solid var(--snes-button-outline);
+    border-radius: 6px;
+    color: #222;
     cursor: pointer;
+    box-shadow: inset 0 2px 0 rgba(255,255,255,0.5), 2px 2px 0 rgba(0,0,0,0.3);
+    image-rendering: pixelated;
+    transition: all 0.1s;
     user-select: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
-  .pixel-btn:active {
-    transform: translate(1px, 1px);
+  .snes-button:active {
+    transform: translate(2px, 2px);
+    box-shadow: inset 0 2px 0 rgba(0,0,0,0.1), 0px 0px 0 rgba(0,0,0,0.3);
+    background: linear-gradient(to bottom, var(--snes-button-bottom) 0%, var(--snes-button-top) 100%);
   }
 
-  .pixel-btn:hover {
+  .snes-button:disabled {
+    filter: grayscale(100%);
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: inset 0 2px 0 rgba(255,255,255,0.2);
+  }
+
+  .snes-button-action {
+    background: linear-gradient(to bottom, #7ece5d 0%, #469a21 100%);
+    color: #fff;
+    text-shadow: 1px 1px 0px #000;
+  }
+  .snes-button-action:active {
+    background: linear-gradient(to bottom, #469a21 0%, #7ece5d 100%);
+  }
+
+  .snes-button-selected {
+    background: linear-gradient(to bottom, #ffd15c 0%, #e29d00 100%);
+    border-color: #8c5a00;
+    box-shadow: inset 0 2px 0 rgba(255,255,255,0.8), 2px 2px 0 rgba(0,0,0,0.3);
+  }
+
+  .grass-bg {
+    background-color: var(--snes-grass-light);
+    background-image:
+      radial-gradient(var(--snes-grass-dark) 10%, transparent 11%),
+      radial-gradient(var(--snes-grass-dark) 10%, transparent 11%);
+    background-size: 24px 24px;
+    background-position: 0 0, 12px 12px;
+  }
+
+  .snes-plot {
+    width: 14vw;
+    height: 14vw;
+    max-width: 5rem;
+    max-height: 5rem;
+    border: 3px solid #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    position: relative;
+    user-select: none;
+    image-rendering: pixelated;
+    transition: filter 0.1s;
+  }
+  .snes-plot:hover {
     filter: brightness(1.1);
   }
-
-  .plot-ready {
-    animation: pixelFlash 0.8s step-start infinite;
-    box-shadow: inset 0 0 0 2px var(--pixel-yellow), 0 0 4px var(--pixel-yellow);
+  .snes-plot:active {
+    filter: brightness(0.9);
   }
 
-  .stat-badge {
-    font-family: 'Courier New', monospace;
-    font-weight: bold;
-    letter-spacing: 1px;
+  .plot-dry {
+    background-color: var(--snes-dirt-dry);
+    border-color: #633615;
+    box-shadow: inset 0 0 6px rgba(0,0,0,0.3);
   }
 
-  body {
-    image-rendering: pixelated;
+  .plot-tilled {
+    background-color: var(--snes-dirt-tilled);
+    border-color: #2b1609;
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.6);
+  }
+
+  .plot-watered {
+    background-color: #3b2010; /* Very dark wet soil */
+    border-color: #1a0f07;
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
+  }
+
+  .plot-locked {
+    background-color: #444;
+    border-color: #222;
+    background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, #333 10px, #333 20px);
+    cursor: not-allowed;
+    opacity: 0.8;
+  }
+
+  @keyframes cropBounce {
+    0%, 100% { transform: translateY(0); filter: drop-shadow(0 2px 2px rgba(0,0,0,0.5)); }
+    50% { transform: translateY(-4px); filter: drop-shadow(0 6px 4px rgba(0,0,0,0.3)); }
+  }
+
+  .crop-bounce {
+    animation: cropBounce 1s infinite alternate;
+  }
+
+  .water-bar-container {
+    position: absolute;
+    bottom: 2px;
+    left: 4px;
+    right: 4px;
+    height: 6px;
+    background: #222;
+    border: 1px solid #111;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .water-bar-fill {
+    height: 100%;
+    background: linear-gradient(to bottom, #4ea3e5, #1e6fae);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.4);
+    transition: width 0.3s ease;
+  }
+  .water-bar-ready {
+    background: linear-gradient(to bottom, #fceb5d, #dfa900);
   }
 `;
 
@@ -85,10 +214,6 @@ export default function FarmPage() {
   const [state, setState] = useState<FarmState | null>(null);
   const [now, setNow] = useState<number>(0);
   const [isHydrated, setIsHydrated] = useState(false);
-
-  // =========================================================================
-  // 初始化（客戶端專用）
-  // =========================================================================
 
   useEffect(() => {
     const saved = loadFarmState();
@@ -100,23 +225,13 @@ export default function FarmPage() {
     setIsHydrated(true);
   }, []);
 
-  // =========================================================================
-  // 自動保存
-  // =========================================================================
-
   useEffect(() => {
     if (!state) return;
-
     const timer = setInterval(() => {
       saveFarmState(state);
     }, AUTO_SAVE_INTERVAL);
-
     return () => clearInterval(timer);
   }, [state]);
-
-  // =========================================================================
-  // 定時 Tick（天氣、成就等）
-  // =========================================================================
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -126,13 +241,8 @@ export default function FarmPage() {
         return tickWeather(current, Date.now());
       });
     }, 60000); // 60 秒 tick 一次
-
     return () => clearInterval(timer);
   }, []);
-
-  // =========================================================================
-  // beforeunload 強制保存
-  // =========================================================================
 
   useEffect(() => {
     const handleUnload = () => {
@@ -140,23 +250,14 @@ export default function FarmPage() {
         saveFarmState(state);
       }
     };
-
     window.addEventListener('beforeunload', handleUnload);
     return () => window.removeEventListener('beforeunload', handleUnload);
   }, [state]);
-
-  // =========================================================================
-  // 更新時間每秒
-  // =========================================================================
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
-
-  // =========================================================================
-  // 事件處理
-  // =========================================================================
 
   const onPlotClick = useCallback((plotId: number) => {
     setState((current) => {
@@ -207,8 +308,8 @@ export default function FarmPage() {
     return (
       <Container>
         <style>{styles}</style>
-        <div className="flex items-center justify-center min-h-screen bg-gradient-to-b from-amber-50 to-green-50">
-          <div className="text-2xl font-bold font-mono text-amber-900">⏳ 加載遊戲中...</div>
+        <div className="flex items-center justify-center min-h-screen bg-gray-900 snes-font text-white">
+          <div className="text-xl animate-pulse snes-text-shadow text-yellow-400">LOADING GAME...</div>
         </div>
       </Container>
     );
@@ -221,36 +322,36 @@ export default function FarmPage() {
   return (
     <Container>
       <style>{styles}</style>
-      <div className="py-6 px-4 space-y-6 min-h-screen" style={{
-        backgroundColor: '#2d5016',
-        backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 8px, rgba(45,80,22,0.3) 8px, rgba(45,80,22,0.3) 16px), repeating-linear-gradient(90deg, transparent, transparent 8px, rgba(45,80,22,0.3) 8px, rgba(45,80,22,0.3) 16px)',
-      }}>
-        {/* 標題 */}
-        <div className="text-center mb-8">
-          <h1 className="text-5xl font-black font-mono text-yellow-300" style={{
-            textShadow: '2px 2px 0 #000, 4px 4px 0 rgba(0,0,0,0.5)',
-            letterSpacing: '3px'
-          }}>
-            🌾 PIXEL FARM 🌾
+      <div className="py-8 px-4 space-y-8 min-h-screen grass-bg snes-font">
+        {/* 標題區 */}
+        <div className="text-center">
+          <h1 className="text-3xl md:text-5xl font-black text-yellow-300 snes-text-shadow mb-3" style={{ textShadow: '4px 4px 0 #000, 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000' }}>
+            SUPER PIXEL FARM
           </h1>
-          <p className="text-lg font-bold text-yellow-200 mt-2 font-mono" style={{
-            textShadow: '1px 1px 0 #000'
-          }}>— PLANT • WATER • HARVEST —</p>
+          <p className="text-sm md:text-base text-white snes-text-shadow">
+            - A 16-BIT LIFE -
+          </p>
         </div>
 
-        {/* 狀態條 */}
-        <StatusBar state={state} level={level} xpToNext={xpToNext} currentSeason={currentSeason} />
+        <div className="max-w-4xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* 左側/上方：狀態與操作面板 */}
+          <div className="space-y-6 lg:col-span-1">
+            <StatusBar state={state} level={level} xpToNext={xpToNext} currentSeason={currentSeason} />
+            <ActionPanel
+              state={state}
+              selectedSeedId={state.selectedSeedId}
+              onSelectSeed={onSelectSeed}
+              onSellCrop={onSellCrop}
+            />
+          </div>
 
-        {/* 農田網格 */}
-        <FarmGrid state={state} now={now} onPlotClick={onPlotClick} />
+          {/* 右側：農田網格 */}
+          <div className="lg:col-span-2 flex justify-center items-start">
+            <FarmGrid state={state} now={now} onPlotClick={onPlotClick} />
+          </div>
 
-        {/* 動作面板 */}
-        <ActionPanel
-          state={state}
-          selectedSeedId={state.selectedSeedId}
-          onSelectSeed={onSelectSeed}
-          onSellCrop={onSellCrop}
-        />
+        </div>
       </div>
     </Container>
   );
@@ -282,106 +383,45 @@ function StatusBar({ state, level, xpToNext, currentSeason }: StatusBarProps) {
     winter: '❄️',
   };
 
-  const seasonName: Record<Season, string> = {
-    spring: '春天',
-    summer: '夏天',
-    autumn: '秋天',
-    winter: '冬天',
-  };
-
-  const weatherName: Record<WeatherType, string> = {
-    sunny: '晴天',
-    cloudy: '陰天',
-    rainy: '下雨',
-    stormy: '暴風',
-  };
-
   return (
-    <div style={{
-      backgroundColor: '#1a1a1a',
-      border: '3px solid #000',
-      borderImage: 'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%228%22 height=%228%22%3E%3Crect width=%228%22 height=%228%22 fill=%22%23ffd700%22/%3E%3Crect x=%221%22 y=%221%22 width=%226%22 height=%226%22 fill=%22%231a1a1a%22/%3E%3C/svg%3E") 1',
-      padding: '12px',
-      margin: '4px',
-    }} className="space-y-3">
-      {/* 第一行：金幣 + 等級 */}
-      <div className="flex items-center justify-between gap-3 font-mono stat-badge text-yellow-300" style={{
-        textShadow: '1px 1px 0 #000'
-      }}>
-        {/* 金幣 */}
-        <div className="pixel-btn flex items-center gap-2" style={{
-          backgroundColor: '#ffd700',
-          color: '#000',
-          border: '2px solid #000',
-          padding: '6px 10px',
-          fontWeight: 'bold',
-        }}>
-          <span className="text-lg">💰</span>
-          <span>{state.player.coins}</span>
-        </div>
+    <div className="snes-panel space-y-4">
+      {/* 標題 */}
+      <div className="text-yellow-300 border-b-2 border-white/20 pb-2 text-center text-sm snes-text-shadow">
+        ★ FARM STATUS ★
+      </div>
 
-        {/* 等級 */}
-        <div className="pixel-btn flex items-center gap-2" style={{
-          backgroundColor: '#6ec34d',
-          color: '#000',
-          border: '2px solid #000',
-          padding: '6px 10px',
-          fontWeight: 'bold',
-        }}>
-          <span>LV</span>
-          <span className="text-lg">{level}</span>
+      <div className="grid grid-cols-2 gap-3 text-xs md:text-sm">
+        <div className="bg-black/50 p-2 rounded border border-white/20 flex items-center justify-between">
+          <span className="text-gray-300">GOLD</span>
+          <span className="text-yellow-400 snes-text-shadow">{state.player.coins}</span>
         </div>
-
-        {/* 季節 */}
-        <div className="pixel-btn flex items-center gap-2" style={{
-          backgroundColor: '#ffd700',
-          color: '#000',
-          border: '2px solid #000',
-          padding: '6px 10px',
-          fontWeight: 'bold',
-          fontSize: '12px',
-        }}>
-          <span>{seasonEmoji[currentSeason]}</span>
-          <span>{seasonName[currentSeason]}</span>
+        <div className="bg-black/50 p-2 rounded border border-white/20 flex items-center justify-between">
+          <span className="text-gray-300">LVL</span>
+          <span className="text-green-400 snes-text-shadow">{level}</span>
         </div>
-
-        {/* 天氣 */}
-        <div className="pixel-btn flex items-center gap-2" style={{
-          backgroundColor: '#808080',
-          color: '#fff',
-          border: '2px solid #000',
-          padding: '6px 10px',
-          fontWeight: 'bold',
-          fontSize: '12px',
-        }}>
-          <span>{weatherEmoji[state.weather.current]}</span>
-          <span>{weatherName[state.weather.current]}</span>
+        <div className="bg-black/50 p-2 rounded border border-white/20 flex items-center justify-between">
+          <span className="text-gray-300">SEA</span>
+          <span className="text-white snes-text-shadow">{seasonEmoji[currentSeason]} {currentSeason.toUpperCase()}</span>
+        </div>
+        <div className="bg-black/50 p-2 rounded border border-white/20 flex items-center justify-between">
+          <span className="text-gray-300">WTH</span>
+          <span className="text-white snes-text-shadow">{weatherEmoji[state.weather.current]} {state.weather.current.toUpperCase()}</span>
         </div>
       </div>
 
-      {/* 第二行：XP 進度條 */}
-      <div className="space-y-1">
-        <div className="flex justify-between text-xs font-mono stat-badge text-yellow-300" style={{
-          textShadow: '1px 1px 0 #000'
-        }}>
+      {/* XP Progress */}
+      <div className="space-y-1 pt-2">
+        <div className="flex justify-between text-[10px] text-gray-300">
           <span>EXP</span>
-          <span>{xpToNext} TO LEVEL UP</span>
+          <span>{xpToNext} TO NEXT</span>
         </div>
-        <div style={{
-          width: '100%',
-          height: '16px',
-          backgroundColor: '#808080',
-          border: '2px solid #000',
-          overflow: 'hidden',
-          boxShadow: 'inset 0 2px 0 rgba(0,0,0,0.5)'
-        }}>
+        <div className="h-4 bg-black border-2 border-gray-600 rounded-sm overflow-hidden relative">
           <div
-            className="h-full"
+            className="h-full bg-green-500 absolute top-0 left-0"
             style={{
               width: `${((state.player.xp % 100) / 100) * 100}%`,
-              backgroundColor: '#6ec34d',
-              backgroundImage: 'repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(0,0,0,0.2) 3px, rgba(0,0,0,0.2) 6px)',
-              transition: 'width 0.3s step-end',
+              boxShadow: 'inset 0 4px 6px -4px rgba(255,255,255,0.6), inset 0 -4px 6px -4px rgba(0,0,0,0.6)',
+              transition: 'width 0.3s ease-out',
             }}
           />
         </div>
@@ -402,18 +442,15 @@ interface FarmGridProps {
 
 function FarmGrid({ state, now, onPlotClick }: FarmGridProps) {
   return (
-    <div className="flex justify-center">
+    <div className="snes-wood-panel p-3 inline-block">
       <div
         style={{
           display: 'grid',
           gridTemplateColumns: `repeat(${FARM_WIDTH}, 1fr)`,
           gridTemplateRows: `repeat(${FARM_HEIGHT}, 1fr)`,
           gap: '2px',
-          padding: '8px',
-          backgroundColor: '#1a1a1a',
-          border: '4px solid #000',
-          boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.8), 0 4px 8px rgba(0,0,0,0.8)',
-          width: 'fit-content',
+          backgroundColor: '#4d2d14',
+          border: '4px solid #331d0b',
         }}
       >
         {state.plots.map((plot) => (
@@ -442,130 +479,76 @@ interface PlotCellProps {
 function PlotCell({ plot, now, onPlotClick }: PlotCellProps) {
   if (!plot.isUnlocked) {
     return (
-      <button
-        disabled
-        className="pixel-btn w-16 h-16 text-2xl font-black flex items-center justify-center cursor-default opacity-60"
-        style={{
-          backgroundColor: '#404040',
-          border: '2px solid #000',
-          color: '#fff',
-        }}
-        title="已鎖定"
-      >
-        🔒
-      </button>
+      <div className="snes-plot plot-locked" title="LOCKED">
+        <span className="text-2xl opacity-50 drop-shadow-md">🔒</span>
+      </div>
     );
   }
 
   const crop = plot.cropId ? CROP_DEFS[plot.cropId] : null;
-  let bgColor = '#8b4513'; // 棕色（空地）
+  let plotClass = 'plot-dry';
   let displayContent = '';
-  let hoverText = '';
+  let hoverText = 'TILL SOIL';
   let isReady = false;
   let waterProgress = 0;
   let canWaterNow = false;
   let countdown = 0;
 
   if (plot.status === 'empty') {
-    displayContent = '🌍';
-    hoverText = 'TILL SOIL';
-    bgColor = '#8b4513';
+    plotClass = 'plot-dry';
   } else if (plot.status === 'tilled') {
-    displayContent = '🌱';
+    plotClass = 'plot-tilled';
     hoverText = 'PLANT SEED';
-    bgColor = '#a0522d';
   } else if (plot.status === 'wilted') {
-    displayContent = '💀';
-    hoverText = 'CLEAR DEAD';
-    bgColor = '#404040';
+    plotClass = 'plot-tilled';
+    displayContent = '🍂';
+    hoverText = 'CLEAR DEAD CROP';
   } else if (crop) {
+    plotClass = 'plot-watered'; // 預設給一種濕潤的泥土感
     if (plot.status === 'seeded' || plot.status === 'growing') {
-      displayContent = crop.emoji;
+      displayContent = plot.status === 'seeded' ? '🌰' : crop.emoji;
       canWaterNow = canWater(plot, crop, now);
       countdown = msUntilNextWater(plot, crop, now);
       waterProgress = (plot.waterCount / crop.waterNeeded) * 100;
 
-      if (canWaterNow) {
-        hoverText = `${crop.name}\n${plot.waterCount}/${crop.waterNeeded} WATERS\n[CLICK TO WATER]`;
-        bgColor = '#6ec34d';
+      if (!canWaterNow && countdown > 0) {
+        plotClass = 'plot-watered'; // 剛澆過水
+        hoverText = `${crop.name.toUpperCase()}\nWAIT: ${formatCountdown(countdown)}`;
       } else {
-        hoverText = `${crop.name}\n${plot.waterCount}/${crop.waterNeeded} WATERS\nWAIT: ${formatCountdown(countdown)}`;
-        bgColor = '#5ca03d';
+        plotClass = 'plot-tilled'; // 乾了，需要澆水
+        hoverText = `${crop.name.toUpperCase()}\nWATER: ${plot.waterCount}/${crop.waterNeeded}`;
       }
     } else if (plot.status === 'ready') {
+      plotClass = 'plot-tilled';
       displayContent = crop.emoji;
-      hoverText = `${crop.name}\nREADY TO HARVEST!`;
+      hoverText = `${crop.name.toUpperCase()}\nREADY TO HARVEST!`;
       isReady = true;
-      bgColor = '#ffd700';
       waterProgress = 100;
     }
   }
 
   return (
-    <div className="relative">
-      <button
-        onClick={() => onPlotClick(plot.id)}
-        title={hoverText}
-        className={`pixel-btn w-16 h-16 text-2xl font-black flex items-center justify-center cursor-pointer relative`}
-        style={{
-          backgroundColor: bgColor,
-          border: '2px solid #000',
-          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.2), 0 2px 4px rgba(0,0,0,0.5)',
-          animation: isReady ? 'pixelFlash 0.8s step-start infinite' : 'none',
-        }}
-        onMouseDown={(e) => (e.currentTarget.style.transform = 'translate(1px, 1px)')}
-        onMouseUp={(e) => (e.currentTarget.style.transform = 'translate(0, 0)')}
-      >
+    <div
+      onClick={() => onPlotClick(plot.id)}
+      title={hoverText}
+      className={`snes-plot ${plotClass}`}
+    >
+      <div className={`text-3xl filter drop-shadow-md ${isReady ? 'crop-bounce' : ''}`} style={{ transform: plot.status === 'growing' ? 'scale(0.8)' : 'scale(1)' }}>
         {displayContent}
-      </button>
+      </div>
 
-      {/* 收成進度條 */}
       {crop && (plot.status === 'seeded' || plot.status === 'growing' || plot.status === 'ready') && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: '2px',
-            left: '2px',
-            right: '2px',
-            height: '4px',
-            backgroundColor: '#404040',
-            border: '1px solid #000',
-            overflow: 'hidden',
-          }}
-        >
+        <div className="water-bar-container">
           <div
-            style={{
-              height: '100%',
-              width: `${Math.min(waterProgress, 100)}%`,
-              backgroundColor: waterProgress >= 100 ? '#ffd700' : '#6ec34d',
-              transition: 'width 0.2s step-end',
-            }}
+            className={`water-bar-fill ${waterProgress >= 100 ? 'water-bar-ready' : ''}`}
+            style={{ width: `${Math.min(waterProgress, 100)}%` }}
           />
         </div>
       )}
 
-      {/* 澆水冷卻指示器（圓形倒計時） */}
       {crop && (plot.status === 'seeded' || plot.status === 'growing') && !canWaterNow && countdown > 0 && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '2px',
-            right: '2px',
-            width: '12px',
-            height: '12px',
-            backgroundColor: '#808080',
-            border: '1px solid #000',
-            borderRadius: '2px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '8px',
-            fontWeight: 'bold',
-            color: '#000',
-          }}
-          title={`冷卻中：${formatCountdown(countdown)}`}
-        >
-          ⏳
+        <div className="absolute top-1 right-1 w-4 h-4 bg-gray-800 border border-black flex items-center justify-center rounded-sm">
+          <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
         </div>
       )}
     </div>
@@ -589,64 +572,41 @@ function ActionPanel({ state, selectedSeedId, onSelectSeed, onSellCrop }: Action
   );
 
   return (
-    <div style={{
-      backgroundColor: '#1a1a1a',
-      border: '3px solid #000',
-      padding: '12px',
-    }} className="space-y-4">
-      {/* 種子選擇 */}
-      <div className="space-y-2">
-        <h3 className="font-mono stat-badge text-yellow-300" style={{
-          textShadow: '1px 1px 0 #000',
-          fontSize: '14px',
-        }}>
-          [SEEDS]
+    <div className="snes-wood-panel p-4 space-y-5">
+      
+      {/* SEEDS */}
+      <div>
+        <h3 className="text-yellow-300 text-xs border-b-2 border-yellow-800/50 pb-1 mb-3 snes-text-shadow">
+          ► SEEDS
         </h3>
-        <div className="flex flex-wrap gap-2">
-          {availableCrops.map((crop) => (
-            <button
-              key={crop.id}
-              onClick={() => onSelectSeed(crop.id)}
-              className="pixel-btn text-lg font-black"
-              style={{
-                backgroundColor: selectedSeedId === crop.id ? '#6ec34d' : '#ffd700',
-                color: '#000',
-                border: '2px solid #000',
-                padding: '6px 8px',
-                cursor: 'pointer',
-                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.2), 0 2px 4px rgba(0,0,0,0.5)',
-              }}
-              title={`Lv.${crop.levelRequired} | Buy:${crop.buyPrice}💰 | Sell:${crop.sellPrice}💰`}
-            >
-              {crop.emoji}
-            </button>
-          ))}
+        <div className="flex flex-wrap gap-3">
+          {availableCrops.map((crop) => {
+            const isSelected = selectedSeedId === crop.id;
+            return (
+              <button
+                key={crop.id}
+                onClick={() => onSelectSeed(crop.id)}
+                className={`snes-button ${isSelected ? 'snes-button-selected' : ''} px-3 py-2 text-2xl`}
+                title={`${crop.name.toUpperCase()} (Lv.${crop.levelRequired})\nBUY: ${crop.buyPrice} GLD\nSELL: ${crop.sellPrice} GLD`}
+              >
+                {crop.emoji}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* 庫存與販賣 */}
-      <div className="space-y-2">
-        <h3 className="font-mono stat-badge text-yellow-300" style={{
-          textShadow: '1px 1px 0 #000',
-          fontSize: '14px',
-        }}>
-          [INVENTORY]
+      {/* INVENTORY */}
+      <div>
+        <h3 className="text-yellow-300 text-xs border-b-2 border-yellow-800/50 pb-1 mb-3 snes-text-shadow">
+          ► INVENTORY
         </h3>
         {Object.keys(state.inventory).length === 0 ? (
-          <div style={{
-            backgroundColor: '#404040',
-            border: '2px dashed #ffd700',
-            padding: '8px',
-            color: '#ffd700',
-            fontFamily: 'monospace',
-            fontWeight: 'bold',
-            fontSize: '12px',
-            textAlign: 'center',
-          }}>
-            EMPTY
+          <div className="bg-black/40 text-gray-400 text-[10px] text-center p-3 rounded border border-black/50">
+            EMPTY BAG
           </div>
         ) : (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-3">
             {Object.entries(state.inventory).map(([cropId, count]) => {
               const crop = CROP_DEFS[cropId];
               if (!crop || count === 0) return null;
@@ -654,19 +614,11 @@ function ActionPanel({ state, selectedSeedId, onSelectSeed, onSellCrop }: Action
                 <button
                   key={cropId}
                   onClick={() => onSellCrop(cropId)}
-                  className="pixel-btn text-lg font-black"
-                  style={{
-                    backgroundColor: '#ffd700',
-                    color: '#000',
-                    border: '2px solid #000',
-                    padding: '6px 8px',
-                    cursor: 'pointer',
-                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.2), 0 2px 4px rgba(0,0,0,0.5)',
-                    fontSize: '12px',
-                  }}
-                  title={`SELL for ${crop.sellPrice}💰`}
+                  className="snes-button snes-button-action px-2 py-1 flex items-center gap-1"
+                  title={`SELL FOR ${crop.sellPrice} GLD`}
                 >
-                  {crop.emoji} x{count}
+                  <span className="text-xl">{crop.emoji}</span>
+                  <span className="text-[10px]">x{count}</span>
                 </button>
               );
             })}
@@ -674,27 +626,18 @@ function ActionPanel({ state, selectedSeedId, onSelectSeed, onSellCrop }: Action
         )}
       </div>
 
-      {/* 遊戲教學 */}
-      <div style={{
-        backgroundColor: '#404040',
-        border: '2px solid #ffd700',
-        padding: '8px',
-        color: '#ffd700',
-        fontFamily: 'monospace',
-        fontWeight: 'bold',
-        fontSize: '11px',
-        lineHeight: '1.5',
-        textShadow: '1px 1px 0 #000',
-      }}>
-        <div className="mb-1">— HOW TO PLAY —</div>
-        <div>① CLICK DIRT</div>
-        <div>② SELECT SEED</div>
-        <div>③ WATER & WAIT</div>
-        <div>④ HARVEST!</div>
-        <div className="mt-1 pt-1 border-t border-yellow-600">
-          💡 RAIN 2x WATER!
+      {/* HOW TO PLAY */}
+      <div className="bg-black/60 p-3 rounded border border-gray-700 mt-4 text-[9px] leading-relaxed text-gray-300">
+        <div className="text-yellow-400 mb-1 text-[10px]">INSTRUCTIONS:</div>
+        <div>1. TAP DIRT TO TILL</div>
+        <div>2. SELECT A SEED & PLANT</div>
+        <div>3. WATER IT AND WAIT</div>
+        <div>4. HARVEST WHEN GLOWING!</div>
+        <div className="mt-2 text-blue-300 border-t border-gray-600 pt-1">
+          * RAIN GIVES 2X WATER
         </div>
       </div>
+
     </div>
   );
 }
