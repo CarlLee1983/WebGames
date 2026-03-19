@@ -66,6 +66,15 @@ export const GAME_REGISTRY: GameDef[] = [
     status: 'published',
   },
   {
+    id: "zookeeper",
+    title: "Zookeeper",
+    description: "Chain together matching zoo animals, trigger reshuffles, and hit the target score in a solo safari puzzle run.",
+    icon: "i-ph-paw-print-duotone",
+    href: "/games/zookeeper",
+    color: "bg-emerald-500",
+    status: 'published',
+  },
+  {
     id: "2048",
     title: "2048",
     description: "Join the numbers and get to the 2048 tile!",
