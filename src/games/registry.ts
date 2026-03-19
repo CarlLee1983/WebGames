@@ -84,6 +84,15 @@ export const GAME_REGISTRY: GameDef[] = [
     status: 'published',
   },
   {
+    id: "farm",
+    title: "Farm",
+    description: "Grow crops, water them, and harvest for coins and XP! A relaxing pixel farming game.",
+    icon: "i-ph-leaf-duotone",
+    href: "/games/farm",
+    color: "bg-green-600",
+    status: 'published',
+  },
+  {
     id: "2048",
     title: "2048",
     description: "Join the numbers and get to the 2048 tile!",
