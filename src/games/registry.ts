@@ -21,6 +21,15 @@ export const GAME_REGISTRY: GameDef[] = [
     status: 'published',
   },
   {
+    id: "memory-match",
+    title: "Memory Match",
+    description: "Test your memory by finding matching pairs of cards.",
+    icon: "i-ph-cards-duotone",
+    href: "/games/memory-match",
+    color: "bg-pink-500",
+    status: 'published',
+  },
+  {
     id: "lights-out",
     title: "Lights Out",
     description: "A logic puzzle where you must turn off all the lights. Clicking one toggles its neighbors!",
