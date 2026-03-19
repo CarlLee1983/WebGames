@@ -93,6 +93,15 @@ export const GAME_REGISTRY: GameDef[] = [
     status: 'published',
   },
   {
+    id: "battleship-blitz",
+    title: "Battleship Blitz",
+    description: "A retro arcade space shooter! Dodge bullets, destroy enemies, and collect power-ups to survive the waves.",
+    icon: "i-ph-rocket-duotone",
+    href: "/games/battleship-blitz",
+    color: "bg-cyan-500",
+    status: 'published',
+  },
+  {
     id: "2048",
     title: "2048",
     description: "Join the numbers and get to the 2048 tile!",
