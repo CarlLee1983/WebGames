@@ -1,163 +1,133 @@
 // 遊戲常數
-export const CANVAS_WIDTH = 600;
-export const CANVAS_HEIGHT = 800;
-export const STAIR_HEIGHT = 85;
-export const STAIR_WIDTH = 180;
-export const PLAYER_Y = CANVAS_HEIGHT * 0.65;
+export const CANVAS_WIDTH = 480;
+export const CANVAS_HEIGHT = 640;
+export const GRAVITY = 1200; // px/s^2
+export const MAX_FALL_SPEED = 800;
+export const PLAYER_SPEED = 300;
+export const PLATFORM_HEIGHT = 16;
+export const CEILING_HEIGHT = 24;
+export const PLAYER_WIDTH = 28;
+export const PLAYER_HEIGHT = 32;
+export const MAX_HP = 10;
 export const FRAME_MS = 1000 / 60;
 
-// 遊戲型別
-export type Side = "left" | "center" | "right";
+// 型別定義
 export type GameMode = "ready" | "playing" | "paused" | "gameOver";
+export type PlatformType = "normal" | "spike" | "trampoline" | "conveyor-left" | "conveyor-right" | "fake";
 
-export interface Stair {
-  row: number;
-  side: Side;
-  hasObstacle: boolean;
-  obstacleType: "ball" | "bear" | "block";
-  highlight: number;
+export interface Platform {
+  id: number;
+  x: number;
+  y: number;
+  width: number;
+  type: PlatformType;
+  touched: boolean;
+  state: number; // 用於計時或動畫狀態
 }
 
 export interface Player {
-  row: number;
-  side: Side;
   x: number;
-  targetX: number;
-  animT: number;
-  jumpT: number;
+  y: number;
+  vx: number;
+  vy: number;
+  hp: number;
+  groundedPlatformId: number | null;
+  inputDir: "left" | "right" | "none";
+  hurtTimer: number;
+  facing: "left" | "right";
 }
 
 export interface GameState {
   mode: GameMode;
   player: Player;
-  stairs: Stair[];
-  nextRow: number;
-  scrollY: number;
+  platforms: Platform[];
+  distance: number;
+  floor: number;
   scrollSpeed: number;
-  score: number;
-  combo: number;
   highScore: number;
-  comboMsg: { text: string; t: number } | null;
+  nextPlatformId: number;
 }
 
-// 側邊 x 座標對應
-export function getSideX(side: Side): number {
-  if (side === "left") return 110;
-  if (side === "center") return CANVAS_WIDTH / 2;
-  return CANVAS_WIDTH - 110;
+// 根據樓層決定難度
+function getScrollSpeed(floor: number): number {
+  if (floor < 10) return 60;
+  if (floor < 30) return 80;
+  if (floor < 50) return 100;
+  if (floor < 100) return 120;
+  return 150 + Math.min(100, (floor - 100));
 }
 
-// 難度參數（根據分數）
-export function getDifficultyParams(score: number): { speed: number; obstacleProbability: number } {
-  let speed = 100;
-  let obstacleProbability = 0.12;
+// 產生新的平台
+function generatePlatform(id: number, y: number, floor: number): Platform {
+  const width = Math.max(60, 120 - Math.floor(floor / 10) * 5); // 隨樓層增加變窄
+  const x = Math.random() * (CANVAS_WIDTH - width);
 
-  if (score >= 100) {
-    speed = 220;
-    obstacleProbability = 0.5;
-  } else if (score >= 60) {
-    speed = 180;
-    obstacleProbability = 0.42;
-  } else if (score >= 30) {
-    speed = 150;
-    obstacleProbability = 0.35;
-  } else if (score >= 10) {
-    speed = 120;
-    obstacleProbability = 0.25;
+  let type: PlatformType = "normal";
+  const r = Math.random();
+
+  if (floor > 5) {
+    if (r < 0.15) type = "spike";
+    else if (r < 0.25) type = "trampoline";
+    else if (r < 0.35) type = "conveyor-left";
+    else if (r < 0.45) type = "conveyor-right";
+    else if (floor > 10 && r < 0.55) type = "fake";
   }
 
-  return { speed, obstacleProbability };
+  return { id, x, y, width, type, touched: false, state: 0 };
 }
 
-// 隨機數生成器（seed 版）
-function seededRandom(seed: number): number {
-  const x = Math.sin(seed) * 10000;
-  return x - Math.floor(x);
-}
-
-// 樓梯生成邏輯
-export function generateStair(row: number, prevSide: Side | null, score: number): Stair {
-  const { obstacleProbability } = getDifficultyParams(score);
-  const seed = row * 1234 + score * 42;
-
-  let side: Side;
-  do {
-    const rnd = seededRandom(seed + Math.random() * 1000);
-    const sideIndex = Math.floor(rnd * 3);
-    side = ["left", "center", "right"][sideIndex] as Side;
-  } while (prevSide && prevSide === side && Math.random() > 0.3);
-
-  const hasObstacle = seededRandom(seed + row * 0.5) < obstacleProbability;
-  const obstacleTypes: ("ball" | "bear" | "block")[] = ["ball", "bear", "block"];
-  const obstacleType = obstacleTypes[Math.floor(seededRandom(seed + row * 0.3) * 3)];
-
-  const stair: Stair = {
-    row,
-    side,
-    hasObstacle,
-    obstacleType,
-    highlight: 0,
-  };
-
-  if (!hasEscapePath([stair])) {
-    stair.hasObstacle = false;
-  }
-
-  return stair;
-}
-
-// 檢查是否有逃脫路徑（前瞻 3 行）
-export function hasEscapePath(stairs: Stair[]): boolean {
-  if (stairs.length === 0) return true;
-  const nextRows = stairs.slice(0, 3);
-  return nextRows.some(s => !s.hasObstacle);
-}
-
-// 初始化遊戲狀態
 export function createInitialState(): GameState {
-  const stairs: Stair[] = [];
+  const platforms: Platform[] = [];
+  let nextPlatformId = 1;
 
-  // 第一階必須在 center（玩家初始位置）
-  const firstStair: Stair = {
-    row: 0,
-    side: "center",
-    hasObstacle: false,
-    obstacleType: "ball",
-    highlight: 0,
-  };
-  stairs.push(firstStair);
+  // 初始安全平台在底下
+  platforms.push({
+    id: 0,
+    x: CANVAS_WIDTH / 2 - 60,
+    y: CANVAS_HEIGHT * 0.8,
+    width: 120,
+    type: "normal",
+    touched: true,
+    state: 0
+  });
 
-  let prevSide: Side = "center";
-
-  for (let i = 1; i < 15; i++) {
-    const stair = generateStair(i, prevSide, 0);
-    stairs.push(stair);
-    prevSide = stair.side;
+  // 預先產生畫面上的其他平台
+  for (let i = 1; i <= 6; i++) {
+    platforms.push(generatePlatform(
+      nextPlatformId++,
+      CANVAS_HEIGHT * 0.8 - i * 100,
+      0
+    ));
   }
 
   return {
     mode: "ready",
     player: {
-      row: 0,
-      side: "center",
-      x: getSideX("center"),
-      targetX: getSideX("center"),
-      animT: 0,
-      jumpT: 0,
+      x: CANVAS_WIDTH / 2,
+      y: CANVAS_HEIGHT * 0.8 - PLAYER_HEIGHT, // 站在初始平台上
+      vx: 0,
+      vy: 0,
+      hp: MAX_HP,
+      groundedPlatformId: 0,
+      inputDir: "none",
+      hurtTimer: 0,
+      facing: "right",
     },
-    stairs,
-    nextRow: 15,
-    scrollY: 0,
-    scrollSpeed: 100,
-    score: 0,
-    combo: 0,
-    highScore: typeof localStorage !== "undefined" ? parseInt(localStorage.getItem("ksrHighScore") || "0", 10) : 0,
-    comboMsg: null,
+    platforms,
+    distance: 0,
+    floor: 0,
+    scrollSpeed: 60,
+    highScore: typeof localStorage !== "undefined" ? parseInt(localStorage.getItem("nsShaftHighScore") || "0", 10) : 0,
+    nextPlatformId
   };
 }
 
 export function startGame(state: GameState): GameState {
   return { ...state, mode: "playing" };
+}
+
+export function restartGame(): GameState {
+  return createInitialState();
 }
 
 export function togglePause(state: GameState): GameState {
@@ -166,462 +136,450 @@ export function togglePause(state: GameState): GameState {
   return state;
 }
 
-export function restartGame(): GameState {
-  return createInitialState();
-}
-
-export function movePlayer(state: GameState, direction: "left" | "right"): GameState {
+export function setPlayerInput(state: GameState, dir: "left" | "right" | "none"): GameState {
   if (state.mode !== "playing") return state;
-
-  const currentSideIndex = ["left", "center", "right"].indexOf(state.player.side);
-  let newSideIndex = currentSideIndex;
-
-  if (direction === "left") {
-    newSideIndex = Math.max(0, currentSideIndex - 1);
-  } else {
-    newSideIndex = Math.min(2, currentSideIndex + 1);
-  }
-
-  const newSide = ["left", "center", "right"][newSideIndex] as Side;
-  const newTargetX = getSideX(newSide);
+  let facing = state.player.facing;
+  if (dir === "left") facing = "left";
+  if (dir === "right") facing = "right";
 
   return {
     ...state,
     player: {
       ...state.player,
-      side: newSide,
-      targetX: newTargetX,
-      animT: 0,
-      jumpT: 1,
-    },
+      inputDir: dir,
+      facing,
+    }
   };
 }
 
-// 主 tick 函數
-export function tick(state: GameState, deltaMs: number): GameState {
-  if (state.mode !== "playing") {
-    return state;
-  }
+// AABB 碰撞檢查 (檢查玩家底部是否剛好落入平台頂部)
+function checkLanding(oldY: number, newY: number, playerX: number, plat: Platform): boolean {
+  const playerBottomOld = oldY + PLAYER_HEIGHT;
+  const playerBottomNew = newY + PLAYER_HEIGHT;
+  const platTop = plat.y;
+  
+  // X 軸覆蓋 (玩家需有一半身體在平台上才算踩到)
+  const isXAligned = (playerX + PLAYER_WIDTH * 0.7 > plat.x) && (playerX - PLAYER_WIDTH * 0.7 + PLAYER_WIDTH < plat.x + plat.width);
+  // Y 軸從上方穿過
+  const isYCrossing = playerBottomOld <= platTop + 2 && playerBottomNew >= platTop;
 
-  const newState = { ...state };
-
-  // 更新捲動
-  const { speed } = getDifficultyParams(newState.score);
-  newState.scrollSpeed = speed;
-  newState.scrollY += (speed * deltaMs) / 1000;
-
-  // 檢查玩家是否踩到新平台
-  const stairIndex = Math.floor(newState.scrollY / STAIR_HEIGHT);
-
-  // 只檢查玩家進入新樓梯時的碰撞
-  if (stairIndex > newState.player.row && stairIndex < newState.stairs.length) {
-    const currentStair = newState.stairs[stairIndex];
-
-    // 檢查是否踩對平台
-    if (currentStair.side !== newState.player.side) {
-      newState.mode = "gameOver";
-      if (newState.score > newState.highScore) {
-        newState.highScore = newState.score;
-        if (typeof localStorage !== "undefined") {
-          localStorage.setItem("ksrHighScore", String(newState.score));
-        }
-      }
-      return newState;
-    }
-
-    // 踩到障礙物
-    if (currentStair.hasObstacle) {
-      newState.mode = "gameOver";
-      if (newState.score > newState.highScore) {
-        newState.highScore = newState.score;
-        if (typeof localStorage !== "undefined") {
-          localStorage.setItem("ksrHighScore", String(newState.score));
-        }
-      }
-      return newState;
-    }
-
-    // 更新分數
-    newState.player.row = stairIndex;
-    newState.score = stairIndex;
-    newState.combo = stairIndex; // combo = score
-
-    if (stairIndex < newState.stairs.length) {
-      newState.stairs[stairIndex].highlight = 1;
-    }
-
-    if (stairIndex > 5) {
-      newState.comboMsg = {
-        text: `×${newState.combo}!`,
-        t: 0.5,
-      };
-    }
-  }
-
-  // 更新玩家位置（插值）
-  newState.player.animT = Math.min(1, newState.player.animT + deltaMs / 150);
-  const easeOut = 1 - Math.pow(1 - newState.player.animT, 3);
-  newState.player.x = newState.player.x + (newState.player.targetX - newState.player.x) * easeOut;
-
-  // 更新跳動動畫
-  if (newState.player.jumpT > 0) {
-    newState.player.jumpT = Math.max(0, newState.player.jumpT - deltaMs / 250);
-  }
-
-  // 更新 highlight
-  newState.stairs = newState.stairs.map(s => ({
-    ...s,
-    highlight: Math.max(0, s.highlight - deltaMs / 300),
-  }));
-
-  // 更新 combo 訊息
-  if (newState.comboMsg) {
-    newState.comboMsg = {
-      ...newState.comboMsg,
-      t: Math.max(0, newState.comboMsg.t - deltaMs / 1000),
-    };
-    if (newState.comboMsg.t <= 0) {
-      newState.comboMsg = null;
-    }
-  }
-
-  // 生成新樓梯
-  while (newState.scrollY + CANVAS_HEIGHT > newState.nextRow * STAIR_HEIGHT) {
-    const prevStair = newState.stairs[newState.stairs.length - 1];
-    const newStair = generateStair(newState.nextRow, prevStair.side, newState.score);
-    newState.stairs.push(newStair);
-    newState.nextRow += 1;
-  }
-
-  // 清理舊樓梯
-  newState.stairs = newState.stairs.filter(s => s.row * STAIR_HEIGHT > newState.scrollY - STAIR_HEIGHT);
-
-  return newState;
+  return isXAligned && isYCrossing;
 }
 
-// Canvas 渲染函數
+export function tick(state: GameState, deltaMs: number): GameState {
+  if (state.mode !== "playing") return state;
+
+  const dt = deltaMs / 1000;
+  const s = { ...state, player: { ...state.player } };
+
+  s.scrollSpeed = getScrollSpeed(s.floor);
+  const scrollOffset = s.scrollSpeed * dt;
+  s.distance += scrollOffset;
+  s.floor = Math.floor(s.distance / 120);
+
+  // 移動所有平台往上
+  const activePlatforms: Platform[] = [];
+  for (const p of s.platforms) {
+    const updated = { ...p, y: p.y - scrollOffset };
+    if (updated.type === "fake" && updated.state > 0) {
+      updated.state += dt;
+    }
+    // 移除超過畫面上方的平台，但保留還沒完全離開的
+    if (updated.y + PLATFORM_HEIGHT > CEILING_HEIGHT) {
+      activePlatforms.push(updated);
+    }
+  }
+  s.platforms = activePlatforms;
+
+  // 補充下方平台
+  const lowestPlat = s.platforms[s.platforms.length - 1];
+  if (lowestPlat && lowestPlat.y < CANVAS_HEIGHT - 100) {
+    s.platforms.push(generatePlatform(s.nextPlatformId++, CANVAS_HEIGHT + 20, s.floor));
+  }
+
+  // 受傷計時
+  if (s.player.hurtTimer > 0) {
+    s.player.hurtTimer -= dt;
+  }
+
+  // X軸移動
+  let targetVx = 0;
+  if (s.player.inputDir === "left") targetVx = -PLAYER_SPEED;
+  if (s.player.inputDir === "right") targetVx = PLAYER_SPEED;
+  
+  s.player.vx = targetVx;
+
+  // 如果在輸送帶上，加上輸送帶速度
+  if (s.player.groundedPlatformId !== null) {
+    const ground = s.platforms.find(p => p.id === s.player.groundedPlatformId);
+    if (ground) {
+      if (ground.type === "conveyor-left") s.player.vx -= 100;
+      if (ground.type === "conveyor-right") s.player.vx += 100;
+      
+      // fake platform collapse mechanism
+      if (ground.type === "fake") {
+        if (ground.state === 0) ground.state = 0.01; // start timer
+        if (ground.state > 0.5) {
+          // Collapse!
+          s.player.groundedPlatformId = null;
+        }
+      }
+    } else {
+      s.player.groundedPlatformId = null;
+    }
+  }
+
+  s.player.x += s.player.vx * dt;
+  // 邊界限制
+  if (s.player.x < 0) s.player.x = 0;
+  if (s.player.x + PLAYER_WIDTH > CANVAS_WIDTH) s.player.x = CANVAS_WIDTH - PLAYER_WIDTH;
+
+  // Y軸移動
+  let newY = s.player.y;
+  let oldY = s.player.y;
+
+  if (s.player.groundedPlatformId !== null) {
+    // 跟隨著平台往上移動
+    const ground = s.platforms.find(p => p.id === s.player.groundedPlatformId);
+    if (ground) {
+      s.player.y = ground.y - PLAYER_HEIGHT;
+      s.player.vy = 0;
+
+      // 如果從平台邊緣掉下去
+      const isXAligned = (s.player.x + PLAYER_WIDTH * 0.7 > ground.x) && (s.player.x - PLAYER_WIDTH * 0.7 + PLAYER_WIDTH < ground.x + ground.width);
+      if (!isXAligned) {
+        s.player.groundedPlatformId = null; 
+      }
+    }
+  } else {
+    // 自由落體
+    s.player.vy += GRAVITY * dt;
+    if (s.player.vy > MAX_FALL_SPEED) s.player.vy = MAX_FALL_SPEED;
+    newY += s.player.vy * dt;
+
+    // 檢查碰撞
+    if (s.player.vy > 0) {
+      for (const p of s.platforms) {
+        if (checkLanding(oldY, newY, s.player.x, p) && (p.type !== "fake" || p.state < 0.5)) {
+          s.player.groundedPlatformId = p.id;
+          s.player.y = p.y - PLAYER_HEIGHT;
+          s.player.vy = 0;
+
+          // 降落效果
+          if (!p.touched) {
+            p.touched = true;
+            if (p.type === "normal" || p.type.startsWith("conveyor")) {
+              s.player.hp = Math.min(MAX_HP, s.player.hp + 1);
+            } else if (p.type === "spike") {
+              s.player.hp -= 5;
+              s.player.hurtTimer = 0.5;
+            } else if (p.type === "trampoline") {
+              s.player.vy = -600; // bounce
+              s.player.groundedPlatformId = null;
+            }
+          } else {
+             if (p.type === "spike" && s.player.hurtTimer <= 0) {
+                 s.player.hp -= 5;
+                 s.player.hurtTimer = 0.5;
+             }
+             else if (p.type === "trampoline") {
+                  s.player.vy = -600; // bounce
+                  s.player.groundedPlatformId = null; 
+             }
+          }
+          break;
+        }
+      }
+    }
+    if (s.player.groundedPlatformId === null) {
+        s.player.y = newY;
+    }
+  }
+
+  // 檢查天花板(釘板)碰撞
+  if (s.player.y < CEILING_HEIGHT) {
+    s.player.y = CEILING_HEIGHT;
+    s.player.vy = 0;
+    // 撞到天花板，強制掉下去而且受傷
+    if (s.player.hurtTimer <= 0) {
+      s.player.hp -= 3;
+      s.player.hurtTimer = 1.0;
+    }
+    // 掉下平台
+    s.player.groundedPlatformId = null;
+    s.player.vy = GRAVITY * 0.2; // slight downward push
+  }
+
+  // 檢查死亡條件
+  if (s.player.hp <= 0 || s.player.y > CANVAS_HEIGHT) {
+    s.mode = "gameOver";
+    if (s.floor > s.highScore) {
+      s.highScore = s.floor;
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("nsShaftHighScore", String(s.highScore));
+      }
+    }
+  }
+
+  return s;
+}
+
+// ---------------- 繪圖函式 ---------------- //
+
 export function drawScene(ctx: CanvasRenderingContext2D, state: GameState): void {
-  // 背景漸層
-  const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-  gradient.addColorStop(0, "#87CEEB");
-  gradient.addColorStop(0.5, "#e0f6ff");
-  gradient.addColorStop(1, "#fff9e6");
-  ctx.fillStyle = gradient;
+  // 背景
+  ctx.fillStyle = "#1e1e24";
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-  // 雲朵裝飾
-  drawClouds(ctx, state.scrollY);
-
-  // 繪製樓梯
-  for (const stair of state.stairs) {
-    const stairY = stair.row * STAIR_HEIGHT - state.scrollY;
-    if (stairY > CANVAS_HEIGHT || stairY + STAIR_HEIGHT < -STAIR_HEIGHT) continue;
-
-    const stairX = getSideX(stair.side) - STAIR_WIDTH / 2;
-    drawStair(ctx, stairX, stairY, stair);
+  // 網格線 (復古感)
+  ctx.strokeStyle = "rgba(255,255,255,0.05)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < CANVAS_WIDTH; i += 40) {
+    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, CANVAS_HEIGHT); ctx.stroke();
   }
+  for (let i = 0; i < CANVAS_HEIGHT; i += 40) {
+    const yOffsets = (i - state.distance % 40);
+    ctx.beginPath(); ctx.moveTo(0, yOffsets); ctx.lineTo(CANVAS_WIDTH, yOffsets); ctx.stroke();
+  }
+
+  // 繪製平台
+  for (const plat of state.platforms) {
+    drawPlatform(ctx, plat);
+  }
+
+  // 繪製天花板釘子
+  drawCeilingSpikes(ctx);
 
   // 繪製玩家
   drawPlayer(ctx, state.player);
 
-  // 繪製 UI
-  drawUI(ctx, state);
+  // 繪製 HUD
+  drawHUD(ctx, state);
 
-  // 繪製遊戲狀態疊層
-  if (state.mode === "ready") {
-    drawReadyOverlay(ctx);
-  } else if (state.mode === "paused") {
-    drawPausedOverlay(ctx);
-  } else if (state.mode === "gameOver") {
-    drawGameOverOverlay(ctx, state);
+  // 疊層
+  if (state.mode === "ready") drawReadyOverlay(ctx);
+  if (state.mode === "paused") drawPausedOverlay(ctx);
+  if (state.mode === "gameOver") drawGameOverOverlay(ctx, state);
+}
+
+function drawPlatform(ctx: CanvasRenderingContext2D, p: Platform) {
+  if (p.type === "fake" && p.state > 0.5) return; // collapsed
+
+  ctx.save();
+  ctx.translate(p.x, p.y);
+
+  if (p.type === "fake") {
+    // Blink if about to break
+    if (p.state > 0.3 && p.state * 20 % 2 < 1) {
+      ctx.globalAlpha = 0.3;
+    }
+  }
+
+  // 底座厚度
+  ctx.fillStyle = "#2c2c36";
+  ctx.fillRect(0, 0, p.width, PLATFORM_HEIGHT);
+
+  switch (p.type) {
+    case "normal":
+      ctx.fillStyle = "#4ade80"; // 綠色正常
+      ctx.fillRect(0, 0, p.width, 6);
+      ctx.fillStyle = "#22c55e";
+      ctx.fillRect(0, 6, p.width, 4);
+      break;
+    
+    case "spike":
+      // 銀色釘子
+      ctx.fillStyle = "#cbd5e1";
+      for (let i = 0; i < p.width; i += 10) {
+        ctx.beginPath();
+        ctx.moveTo(i, 8);
+        ctx.lineTo(i + 5, -6);
+        ctx.lineTo(i + 10, 8);
+        ctx.fill();
+      }
+      ctx.fillStyle = "#94a3b8";
+      ctx.fillRect(0, 6, p.width, 4);
+      break;
+
+    case "trampoline":
+      ctx.fillStyle = "#fbbf24";
+      ctx.fillRect(0, 0, p.width, 4); // Jump pad
+      ctx.fillStyle = "#d97706";
+      ctx.fillRect(10, 4, p.width - 20, 6);
+      break;
+
+    case "conveyor-left":
+    case "conveyor-right":
+      ctx.fillStyle = "#60a5fa";
+      ctx.fillRect(0, 0, p.width, 8);
+      // 動態紋理
+      ctx.fillStyle = "#2563eb";
+      const offset = (Date.now() / 10) % 20;
+      for (let i = -20; i < p.width; i += 20) {
+        const dx = p.type === "conveyor-left" ? -offset : offset;
+        const xPos = i + dx;
+        if (xPos > -10 && xPos < p.width) {
+          ctx.beginPath();
+          if (p.type === "conveyor-left") {
+            ctx.moveTo(xPos + 10, 2); ctx.lineTo(xPos, 4); ctx.lineTo(xPos + 10, 6);
+          } else {
+            ctx.moveTo(xPos, 2); ctx.lineTo(xPos + 10, 4); ctx.lineTo(xPos, 6);
+          }
+          ctx.fill();
+        }
+      }
+      break;
+
+    case "fake":
+      ctx.fillStyle = "#fb7185";
+      ctx.fillRect(0, 0, p.width, 6);
+      ctx.fillStyle = "#e11d48";
+      ctx.fillRect(0, 6, p.width, 4);
+      break;
+  }
+
+  // 邊緣高光
+  ctx.fillStyle = "rgba(255,255,255,0.2)";
+  ctx.fillRect(0, 0, p.width, 2);
+
+  ctx.restore();
+}
+
+function drawCeilingSpikes(ctx: CanvasRenderingContext2D) {
+  ctx.fillStyle = "#475569";
+  ctx.fillRect(0, 0, CANVAS_WIDTH, CEILING_HEIGHT - 6);
+  
+  ctx.fillStyle = "#94a3b8"; // Spike color
+  for (let i = 0; i < CANVAS_WIDTH; i += 16) {
+    ctx.beginPath();
+    ctx.moveTo(i, CEILING_HEIGHT - 6);
+    ctx.lineTo(i + 8, CEILING_HEIGHT + 6);
+    ctx.lineTo(i + 16, CEILING_HEIGHT - 6);
+    ctx.fill();
   }
 }
 
-function drawClouds(ctx: CanvasRenderingContext2D, scrollY: number) {
-  ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
-  const offset = (scrollY * 0.3) % 600;
+function drawPlayer(ctx: CanvasRenderingContext2D, p: Player) {
+  // 受傷閃爍
+  if (p.hurtTimer > 0 && Math.floor(Date.now() / 100) % 2 === 0) {
+    return;
+  }
 
-  drawCloud(ctx, 100 - offset, 80, 60);
-  drawCloud(ctx, 100 - offset + 600, 80, 60);
-  drawCloud(ctx, 450 - offset * 0.5, 150, 50);
-  drawCloud(ctx, 450 - offset * 0.5 + 600, 150, 50);
-}
+  ctx.save();
+  ctx.translate(p.x + PLAYER_WIDTH / 2, p.y + PLAYER_HEIGHT / 2);
 
-function drawCloud(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+  if (p.facing === "left") {
+    ctx.scale(-1, 1);
+  }
+
+  // 隨便畫個小圓人 (類似大番薯)
+  ctx.fillStyle = "#facc15"; // Yellow body
   ctx.beginPath();
-  ctx.arc(x, y, size, 0, Math.PI * 2);
-  ctx.arc(x + size * 0.8, y - size * 0.5, size * 0.9, 0, Math.PI * 2);
-  ctx.arc(x + size * 1.6, y, size * 0.8, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-function drawStair(ctx: CanvasRenderingContext2D, x: number, y: number, stair: Stair) {
-  // 陰影/立面
-  ctx.fillStyle = "#8B6914";
-  ctx.fillRect(x, y + STAIR_HEIGHT - 10, STAIR_WIDTH, 10);
-
-  // 平台主體
-  const platColor = stair.hasObstacle ? "#D4A574" : "#E8D5B7";
-  ctx.fillStyle = platColor;
-  ctx.beginPath();
-  ctx.roundRect(x, y, STAIR_WIDTH, STAIR_HEIGHT - 10, 12);
+  ctx.ellipse(0, 0, PLAYER_WIDTH / 2, PLAYER_HEIGHT / 2, 0, 0, Math.PI * 2);
   ctx.fill();
 
   // 邊框
-  ctx.strokeStyle = "#8B6914";
+  ctx.strokeStyle = "#ca8a04";
   ctx.lineWidth = 2;
   ctx.stroke();
-
-  // 高亮效果
-  if (stair.highlight > 0) {
-    ctx.fillStyle = `rgba(255, 255, 150, ${stair.highlight * 0.5})`;
-    ctx.beginPath();
-    ctx.roundRect(x, y, STAIR_WIDTH, STAIR_HEIGHT - 10, 12);
-    ctx.fill();
-  }
-
-  // 障礙物
-  if (stair.hasObstacle) {
-    const obstacleX = getSideX(stair.side);
-    const obstacleY = y + (STAIR_HEIGHT - 10) / 2;
-    drawObstacle(ctx, obstacleX, obstacleY, stair.obstacleType);
-  }
-}
-
-function drawObstacle(ctx: CanvasRenderingContext2D, x: number, y: number, type: string) {
-  if (type === "ball") {
-    const gradient = ctx.createRadialGradient(x - 8, y - 8, 0, x, y, 20);
-    gradient.addColorStop(0, "#FF6B6B");
-    gradient.addColorStop(1, "#C92A2A");
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.arc(x, y, 20, 0, Math.PI * 2);
-    ctx.fill();
-
-    // 高光
-    ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
-    ctx.beginPath();
-    ctx.arc(x - 6, y - 6, 8, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (type === "bear") {
-    // 熊身體
-    ctx.fillStyle = "#8B6914";
-    ctx.beginPath();
-    ctx.roundRect(x - 16, y - 8, 32, 28, 6);
-    ctx.fill();
-
-    // 熊頭
-    ctx.fillStyle = "#A0826D";
-    ctx.beginPath();
-    ctx.arc(x, y - 20, 15, 0, Math.PI * 2);
-    ctx.fill();
-
-    // 耳朵
-    ctx.fillStyle = "#8B6914";
-    ctx.beginPath();
-    ctx.arc(x - 12, y - 32, 8, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(x + 12, y - 32, 8, 0, Math.PI * 2);
-    ctx.fill();
-
-    // 眼睛
-    ctx.fillStyle = "#000";
-    ctx.beginPath();
-    ctx.arc(x - 6, y - 22, 4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(x + 6, y - 22, 4, 0, Math.PI * 2);
-    ctx.fill();
-  } else {
-    // 積木
-    ctx.fillStyle = "#4A90E2";
-    ctx.fillRect(x - 14, y - 14, 28, 28);
-    ctx.fillStyle = "#2E5C8A";
-    ctx.fillRect(x - 14, y - 14, 28, 8);
-
-    // 邊框
-    ctx.strokeStyle = "#1E3A5F";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x - 14, y - 14, 28, 28);
-  }
-}
-
-function drawPlayer(ctx: CanvasRenderingContext2D, player: Player) {
-  const bodyY = PLAYER_Y + player.jumpT * -30;
-
-  // 身體（蛋形）
-  ctx.fillStyle = "#FFD93D";
-  ctx.beginPath();
-  ctx.ellipse(player.x, bodyY + 15, 22, 28, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 頭部
-  const gradient = ctx.createRadialGradient(player.x - 5, bodyY - 15, 0, player.x, bodyY - 15, 18);
-  gradient.addColorStop(0, "#FFE66D");
-  gradient.addColorStop(1, "#FFD93D");
-  ctx.fillStyle = gradient;
-  ctx.beginPath();
-  ctx.arc(player.x, bodyY - 15, 18, 0, Math.PI * 2);
-  ctx.fill();
 
   // 眼睛
   ctx.fillStyle = "#000";
-  ctx.beginPath();
-  ctx.arc(player.x - 8, bodyY - 18, 4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(player.x + 8, bodyY - 18, 4, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 眼睛高光
-  ctx.fillStyle = "#fff";
-  ctx.beginPath();
-  ctx.arc(player.x - 6, bodyY - 20, 1.5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(player.x + 10, bodyY - 20, 1.5, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(4, -4, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(12, -4, 3, 0, Math.PI * 2); ctx.fill();
 
   // 嘴巴
   ctx.strokeStyle = "#000";
-  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(player.x, bodyY - 8, 6, 0, Math.PI);
+  if (p.hurtTimer > 0) {
+    // 痛
+    ctx.arc(8, 4, 3, Math.PI, 0); 
+  } else {
+    // 微笑
+    ctx.arc(8, 4, 3, 0, Math.PI);
+  }
   ctx.stroke();
 
-  // 手臂
-  ctx.strokeStyle = "#FFE66D";
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.moveTo(player.x - 22, bodyY + 8);
-  ctx.lineTo(player.x - 35, bodyY - 5);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(player.x + 22, bodyY + 8);
-  ctx.lineTo(player.x + 35, bodyY - 5);
-  ctx.stroke();
-
-  // 手
-  ctx.fillStyle = "#FFD93D";
-  ctx.beginPath();
-  ctx.arc(player.x - 35, bodyY - 5, 8, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(player.x + 35, bodyY - 5, 8, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 腿
-  ctx.strokeStyle = "#FFE66D";
-  ctx.lineWidth = 5;
-  ctx.beginPath();
-  ctx.moveTo(player.x - 10, bodyY + 42);
-  ctx.lineTo(player.x - 10, bodyY + 58);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(player.x + 10, bodyY + 42);
-  ctx.lineTo(player.x + 10, bodyY + 58);
-  ctx.stroke();
-
-  // 腳
-  ctx.fillStyle = "#FF6B6B";
-  ctx.fillRect(player.x - 14, bodyY + 56, 8, 12);
-  ctx.fillRect(player.x + 6, bodyY + 56, 8, 12);
+  ctx.restore();
 }
 
-function drawUI(ctx: CanvasRenderingContext2D, state: GameState) {
-  // 分數面板
-  ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
-  ctx.fillRect(0, 0, 200, 80);
-
+function drawHUD(ctx: CanvasRenderingContext2D, s: GameState) {
+  // 生命條 Background
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  ctx.fillRect(10, 30, 160, 24);
+  
   ctx.fillStyle = "#fff";
-  ctx.font = "bold 28px Arial";
+  ctx.font = "bold 14px monospace";
   ctx.textAlign = "left";
-  ctx.fillText(`Score: ${state.score}`, 20, 35);
+  ctx.fillText("HP", 16, 47);
 
-  ctx.font = "18px Arial";
-  ctx.fillText(`Best: ${state.highScore}`, 20, 60);
-
-  // Combo 訊息
-  if (state.comboMsg && state.comboMsg.t > 0) {
-    ctx.fillStyle = `rgba(255, 107, 107, ${state.comboMsg.t})`;
-    ctx.font = "bold 48px Arial";
-    ctx.textAlign = "center";
-    ctx.fillText(state.comboMsg.text, CANVAS_WIDTH / 2, 120);
+  // 生命格子
+  const barWidth = 10;
+  for (let i = 0; i < Math.floor(s.player.hp); i++) {
+    // 如果快死了變紅，正常是紅到綠
+    ctx.fillStyle = s.player.hp <= 3 ? "#ef4444" : "#fcd34d";
+    ctx.fillRect(40 + i * 11, 34, barWidth, 16);
   }
 
-  // 難度指示器
-  const speed = getDifficultyParams(state.score).speed;
-  const speedLevel = Math.min(5, Math.floor(speed / 50));
-  ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
-  ctx.fillRect(CANVAS_WIDTH - 150, 10, 130, 20);
-  ctx.fillStyle = "#FF6B6B";
-  for (let i = 0; i < speedLevel; i++) {
-    ctx.fillRect(CANVAS_WIDTH - 140 + i * 20, 12, 16, 16);
-  }
+  // 樓層 Floor
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  ctx.fillRect(CANVAS_WIDTH - 120, 30, 110, 36);
+  
+  ctx.fillStyle = "#ecfdf5";
+  ctx.font = "bold 24px monospace";
+  ctx.textAlign = "right";
+  ctx.fillText(`B ${s.floor.toString().padStart(4, '0')}`, CANVAS_WIDTH - 20, 56);
 }
 
 function drawReadyOverlay(ctx: CanvasRenderingContext2D) {
-  ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+  ctx.fillStyle = "rgba(0,0,0,0.7)";
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
   ctx.fillStyle = "#fff";
-  ctx.font = "bold 48px Arial";
   ctx.textAlign = "center";
-  ctx.fillText("Kids Stair Rush", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 80);
-
-  ctx.font = "24px Arial";
-  ctx.fillStyle = "#FFD93D";
-  ctx.fillText("Press SPACE to Start", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 40);
-
-  ctx.font = "16px Arial";
-  ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
-  ctx.fillText("Tap to move left / right", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 100);
+  ctx.font = "bold 36px monospace";
+  ctx.fillText("NS-SHAFT", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 40);
+  ctx.font = "18px monospace";
+  ctx.fillText("Press SPACE to Start", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 20);
 }
 
 function drawPausedOverlay(ctx: CanvasRenderingContext2D) {
-  ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
   ctx.fillStyle = "#fff";
-  ctx.font = "bold 48px Arial";
   ctx.textAlign = "center";
+  ctx.font = "bold 36px monospace";
   ctx.fillText("PAUSED", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
-
-  ctx.font = "20px Arial";
-  ctx.fillText("Press SPACE to resume", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 60);
 }
 
-function drawGameOverOverlay(ctx: CanvasRenderingContext2D, state: GameState) {
-  ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+function drawGameOverOverlay(ctx: CanvasRenderingContext2D, s: GameState) {
+  ctx.fillStyle = "rgba(0,0,0,0.8)";
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
-  ctx.fillStyle = "#FF6B6B";
-  ctx.font = "bold 56px Arial";
+  ctx.fillStyle = "#ef4444";
   ctx.textAlign = "center";
-  ctx.fillText("Game Over", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 100);
-
+  ctx.font = "bold 42px monospace";
+  ctx.fillText("GAME OVER", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 40);
+  
   ctx.fillStyle = "#fff";
-  ctx.font = "32px Arial";
-  ctx.fillText(`Score: ${state.score}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+  ctx.font = "24px monospace";
+  ctx.fillText(`Floor: B ${s.floor}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 20);
+  ctx.font = "18px monospace";
+  ctx.fillText(`High Score: ${s.highScore}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 60);
 
-  ctx.font = "24px Arial";
-  ctx.fillText(`Best: ${state.highScore}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 60);
-
-  ctx.fillStyle = "#FFD93D";
-  ctx.font = "22px Arial";
-  ctx.fillText("Press SPACE to Restart", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 140);
+  ctx.fillStyle = "#facc15";
+  ctx.font = "18px monospace";
+  ctx.fillText("Press SPACE to Restart", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 120);
 }
 
+// 用於 playwright 驗證的狀態輸出
 export function renderGameToText(state: GameState): string {
   return JSON.stringify({
     mode: state.mode,
-    score: state.score,
-    highScore: state.highScore,
-    combo: state.combo,
-    playerRow: state.player.row,
-    playerSide: state.player.side,
-    scrollY: state.scrollY,
-    scrollSpeed: state.scrollSpeed,
-  }, null, 2);
+    floor: state.floor,
+    hp: state.player.hp,
+    playerX: Math.round(state.player.x),
+    playerY: Math.round(state.player.y),
+    groundedPlatformId: state.player.groundedPlatformId,
+    numActivePlatforms: state.platforms.length
+  });
 }
+

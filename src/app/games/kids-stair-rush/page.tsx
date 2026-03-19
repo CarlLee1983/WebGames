@@ -9,7 +9,7 @@ import {
   GameState,
   createInitialState,
   drawScene,
-  movePlayer,
+  setPlayerInput,
   renderGameToText,
   restartGame,
   startGame,
@@ -29,6 +29,8 @@ export default function KidsStairRushPage() {
   const stateRef = useRef<GameState>(createInitialState());
 
   const lastTimeRef = useRef<number>(0);
+  const leftPressed = useRef(false);
+  const rightPressed = useRef(false);
 
   // 遊戲迴圈
   const gameLoop = useCallback(() => {
@@ -68,6 +70,16 @@ export default function KidsStairRushPage() {
 
   // 鍵盤事件
   useEffect(() => {
+    const updateInputState = () => {
+      if (leftPressed.current && !rightPressed.current) {
+        stateRef.current = setPlayerInput(stateRef.current, "left");
+      } else if (rightPressed.current && !leftPressed.current) {
+        stateRef.current = setPlayerInput(stateRef.current, "right");
+      } else {
+        stateRef.current = setPlayerInput(stateRef.current, "none");
+      }
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       const state = stateRef.current;
 
@@ -80,6 +92,7 @@ export default function KidsStairRushPage() {
           } else if (state.mode === "gameOver") {
             stateRef.current = restartGame();
             lastTimeRef.current = 0;
+            stateRef.current = startGame(stateRef.current);
           } else if (state.mode === "playing") {
             stateRef.current = togglePause(state);
           }
@@ -89,20 +102,46 @@ export default function KidsStairRushPage() {
         case "a":
         case "A":
           e.preventDefault();
-          stateRef.current = movePlayer(state, "left");
+          leftPressed.current = true;
+          updateInputState();
           break;
 
         case "ArrowRight":
         case "d":
         case "D":
           e.preventDefault();
-          stateRef.current = movePlayer(state, "right");
+          rightPressed.current = true;
+          updateInputState();
+          break;
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      switch (e.key) {
+        case "ArrowLeft":
+        case "a":
+        case "A":
+          e.preventDefault();
+          leftPressed.current = false;
+          updateInputState();
+          break;
+
+        case "ArrowRight":
+        case "d":
+        case "D":
+          e.preventDefault();
+          rightPressed.current = false;
+          updateInputState();
           break;
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
   }, []);
 
   // 觸控事件
@@ -115,17 +154,31 @@ export default function KidsStairRushPage() {
       const rect = canvas.getBoundingClientRect();
       const x = touch.clientX - rect.left;
 
-      const state = stateRef.current;
-
       if (x < CANVAS_WIDTH / 2) {
-        stateRef.current = movePlayer(state, "left");
+        leftPressed.current = true;
       } else {
-        stateRef.current = movePlayer(state, "right");
+        rightPressed.current = true;
+      }
+      
+      if (leftPressed.current && !rightPressed.current) {
+        stateRef.current = setPlayerInput(stateRef.current, "left");
+      } else if (rightPressed.current && !leftPressed.current) {
+        stateRef.current = setPlayerInput(stateRef.current, "right");
       }
     };
 
+    const handleTouchEnd = (e: TouchEvent) => {
+      leftPressed.current = false;
+      rightPressed.current = false;
+      stateRef.current = setPlayerInput(stateRef.current, "none");
+    };
+
     canvas.addEventListener("touchstart", handleTouchStart);
-    return () => canvas.removeEventListener("touchstart", handleTouchStart);
+    canvas.addEventListener("touchend", handleTouchEnd);
+    return () => {
+      canvas.removeEventListener("touchstart", handleTouchStart);
+      canvas.removeEventListener("touchend", handleTouchEnd);
+    };
   }, []);
 
   // Window hooks for testing
@@ -154,67 +207,47 @@ export default function KidsStairRushPage() {
         {/* 標題 */}
         <div className="mb-8 text-center">
           <div className="flex items-center justify-center gap-3 mb-4">
-            <i className="i-ph-stairs-duotone text-5xl text-yellow-400" />
-            <h1 className="text-5xl font-bold bg-gradient-to-r from-yellow-400 to-orange-400 bg-clip-text text-transparent">
-              Kids Stair Rush
+            <i className="i-ph-arrow-fat-lines-down-duotone text-5xl text-rose-500" />
+            <h1 className="text-5xl font-bold bg-gradient-to-r from-rose-500 to-yellow-500 bg-clip-text text-transparent">
+              小朋友下樓梯 (NS-Shaft)
             </h1>
           </div>
-          <p className="text-lg text-gray-600">幫小朋友快速躲避樓梯上的障礙物！</p>
+          <p className="text-lg text-gray-600">經典重現，持續向下跳躍閃避天花板！</p>
         </div>
 
         {/* 遊戲區域 */}
         <div className="flex justify-center">
-          <div className="relative bg-white rounded-3xl shadow-2xl p-6 overflow-hidden" style={{width: CANVAS_WIDTH + 48}}>
+          <div className="relative bg-[#1e1e24] rounded-3xl shadow-2xl p-4 overflow-hidden" style={{width: CANVAS_WIDTH + 32}}>
             {/* Canvas */}
             <canvas
               ref={canvasRef}
               width={CANVAS_WIDTH}
               height={CANVAS_HEIGHT}
-              className="block bg-sky-100 rounded-2xl shadow-lg"
+              className="block bg-black rounded-lg shadow-lg mx-auto"
             />
-
-            {/* 行動控制按鈕 */}
-            <div className="mt-6 grid grid-cols-2 gap-4 sm:hidden">
-              <button
-                onClick={() => {
-                  stateRef.current = movePlayer(stateRef.current, "left");
-                }}
-                className="py-4 px-6 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold text-lg rounded-xl active:from-blue-700 active:to-blue-800 transition-all"
-              >
-                ← 左
-              </button>
-              <button
-                onClick={() => {
-                  stateRef.current = movePlayer(stateRef.current, "right");
-                }}
-                className="py-4 px-6 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold text-lg rounded-xl active:from-blue-700 active:to-blue-800 transition-all"
-              >
-                右 →
-              </button>
-            </div>
           </div>
         </div>
 
         {/* 控制說明 */}
         <div className="mt-8 max-w-2xl mx-auto">
-          <div className="bg-gradient-to-r from-yellow-50 to-orange-50 rounded-2xl p-6 border-2 border-yellow-200">
-            <h2 className="text-2xl font-bold text-yellow-700 mb-4">🎮 遊戲控制</h2>
+          <div className="bg-gradient-to-r from-rose-50 to-orange-50 rounded-2xl p-6 border-2 border-rose-200">
+            <h2 className="text-2xl font-bold text-rose-700 mb-4">🎮 遊戲控制</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-gray-700">
               <div className="flex items-center gap-3">
-                <div className="bg-yellow-400 text-white font-bold px-3 py-2 rounded-lg text-sm">
+                <div className="bg-rose-500 text-white font-bold px-3 py-2 rounded-lg text-sm">
                   SPACE
                 </div>
-                <span>開始 / 重新開始 / 暫停</span>
+                <span>開始 / 重新開始</span>
               </div>
               <div className="flex items-center gap-3">
-                <div className="bg-yellow-400 text-white font-bold px-3 py-2 rounded-lg text-sm">
+                <div className="bg-rose-500 text-white font-bold px-3 py-2 rounded-lg text-sm">
                   ← → 或 A D
                 </div>
                 <span>左右移動</span>
               </div>
               <div className="col-span-1 sm:col-span-2">
                 <div className="flex items-center gap-3">
-                  <div className="bg-yellow-400 text-white font-bold px-3 py-2 rounded-lg text-sm">
+                  <div className="bg-rose-500 text-white font-bold px-3 py-2 rounded-lg text-sm">
                     觸控/點擊
                   </div>
                   <span>在螢幕左側點擊向左，右側點擊向右</span>
@@ -228,37 +261,22 @@ export default function KidsStairRushPage() {
             <h2 className="text-2xl font-bold text-blue-700 mb-4">📖 遊戲規則</h2>
             <ul className="space-y-3 text-gray-700">
               <li className="flex items-start gap-3">
-                <span className="text-2xl">👶</span>
-                <span>小朋友會自動向下踩樓梯，你需要快速按鍵控制他左右移動</span>
+                <span className="text-2xl">🏃</span>
+                <span>控制角色左右移動，不斷踩在平台上下降，避免被螢幕上方的釘板刺死。</span>
               </li>
               <li className="flex items-start gap-3">
-                <span className="text-2xl">🎯</span>
-                <span>每踩對一個平台就得 1 分，連續踩對可累積 combo 加分</span>
+                <span className="text-2xl">💚</span>
+                <span>踩到普通平台 (綠色/藍色輸送帶) 可以恢復生命值 1 格。</span>
               </li>
               <li className="flex items-start gap-3">
                 <span className="text-2xl">⚠️</span>
-                <span>踩到障礙物（球、熊、積木）或踩空就會 Game Over</span>
+                <span>踩到釘板平台 (銀色) 會失去 5 格生命值。掉出畫面下方或生命值歸零則 Game Over。</span>
               </li>
               <li className="flex items-start gap-3">
-                <span className="text-2xl">🔥</span>
-                <span>分數越高難度越大，樓梯速度會加快，障礙物會增多</span>
-              </li>
-              <li className="flex items-start gap-3">
-                <span className="text-2xl">⭐</span>
-                <span>挑戰最高分，看看你能帶小朋友衝到第幾級樓梯！</span>
+                <span className="text-2xl">⚡</span>
+                <span>留意彈簧 (黃色) 會把你彈飛，翻轉板 (紅色) 踩上去一下子就會消失！</span>
               </li>
             </ul>
-          </div>
-
-          {/* 難度提示 */}
-          <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-2xl p-6 border-2 border-green-200 mt-6">
-            <h2 className="text-2xl font-bold text-green-700 mb-4">💪 難度等級</h2>
-            <div className="space-y-2 text-gray-700 text-sm">
-              <p>🥉 初級 (0-10 分): 速度 100 px/s, 障礙物機率 12%</p>
-              <p>🥈 中級 (10-30 分): 速度 120 px/s, 障礙物機率 25%</p>
-              <p>🥇 高級 (30-60 分): 速度 150 px/s, 障礙物機率 35%</p>
-              <p>🔥 瘋狂 (60-100+ 分): 速度 180-220 px/s, 障礙物機率 42-50%</p>
-            </div>
           </div>
         </div>
       </Container>

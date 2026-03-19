@@ -1,0 +1,203 @@
+[   39883ms] [ERROR] WebSocket connection to 'ws://localhost:3000/WebGames/_next/webpack-hmr?id=_ZJ-pfyB8vTEiIukNDas5' failed: Error during WebSocket handshake: Unexpected response code: 404 @ http://localhost:3000/WebGames/_next/static/chunks/0dm4_next_dist_client_0w6fmrc._.js:13299
+[   40888ms] [ERROR] WebSocket connection to 'ws://localhost:3000/WebGames/_next/webpack-hmr?id=_ZJ-pfyB8vTEiIukNDas5' failed: Error during WebSocket handshake: Unexpected response code: 404 @ http://localhost:3000/WebGames/_next/static/chunks/0dm4_next_dist_client_0w6fmrc._.js:13299
+[   41889ms] [ERROR] WebSocket connection to 'ws://localhost:3000/WebGames/_next/webpack-hmr?id=_ZJ-pfyB8vTEiIukNDas5' failed: Error during WebSocket handshake: Unexpected response code: 404 @ http://localhost:3000/WebGames/_next/static/chunks/0dm4_next_dist_client_0w6fmrc._.js:13299
+[   42892ms] [ERROR] WebSocket connection to 'ws://localhost:3000/WebGames/_next/webpack-hmr?id=_ZJ-pfyB8vTEiIukNDas5' failed: Error during WebSocket handshake: Unexpected response code: 404 @ http://localhost:3000/WebGames/_next/static/chunks/0dm4_next_dist_client_0w6fmrc._.js:13299
+[   43894ms] [ERROR] WebSocket connection to 'ws://localhost:3000/WebGames/_next/webpack-hmr?id=_ZJ-pfyB8vTEiIukNDas5' failed: Error during WebSocket handshake: Unexpected response code: 404 @ http://localhost:3000/WebGames/_next/static/chunks/0dm4_next_dist_client_0w6fmrc._.js:13299
+[   48899ms] [ERROR] WebSocket connection to 'ws://localhost:3000/WebGames/_next/webpack-hmr?id=_ZJ-pfyB8vTEiIukNDas5' failed: Error during WebSocket handshake: Unexpected response code: 404 @ http://localhost:3000/WebGames/_next/static/chunks/0dm4_next_dist_client_0w6fmrc._.js:13299
+[   53902ms] [ERROR] WebSocket connection to 'ws://localhost:3000/WebGames/_next/webpack-hmr?id=_ZJ-pfyB8vTEiIukNDas5' failed: Error during WebSocket handshake: Unexpected response code: 404 @ http://localhost:3000/WebGames/_next/static/chunks/0dm4_next_dist_client_0w6fmrc._.js:13299
+[   58907ms] [ERROR] WebSocket connection to 'ws://localhost:3000/WebGames/_next/webpack-hmr?id=_ZJ-pfyB8vTEiIukNDas5' failed: Error during WebSocket handshake: Unexpected response code: 404 @ http://localhost:3000/WebGames/_next/static/chunks/0dm4_next_dist_client_0w6fmrc._.js:13299
+[   63911ms] [ERROR] WebSocket connection to 'ws://localhost:3000/WebGames/_next/webpack-hmr?id=_ZJ-pfyB8vTEiIukNDas5' failed: Error during WebSocket handshake: Unexpected response code: 404 @ http://localhost:3000/WebGames/_next/static/chunks/0dm4_next_dist_client_0w6fmrc._.js:13299
+[   68914ms] [ERROR] WebSocket connection to 'ws://localhost:3000/WebGames/_next/webpack-hmr?id=_ZJ-pfyB8vTEiIukNDas5' failed: Error during WebSocket handshake: Unexpected response code: 404 @ http://localhost:3000/WebGames/_next/static/chunks/0dm4_next_dist_client_0w6fmrc._.js:13299
+[   73919ms] [ERROR] WebSocket connection to 'ws://localhost:3000/WebGames/_next/webpack-hmr?id=_ZJ-pfyB8vTEiIukNDas5' failed: Error during WebSocket handshake: Unexpected response code: 404 @ http://localhost:3000/WebGames/_next/static/chunks/0dm4_next_dist_client_0w6fmrc._.js:13299
+[  562726ms] [ERROR] ./web-games/src/app/games/kids-stair-rush/page.tsx:5:1
+Export movePlayer doesn't exist in target module
+   3 | import { useCallback, useEffect, useRef } from "react";
+   4 | import Container from "@/components/common/Container";
+>  5 | import {
+     | ^^^^^^^
+>  6 |   CANVAS_HEIGHT,
+     | ^^^^^^^^^^^^^^^^
+>  7 |   CANVAS_WIDTH,
+     | ^^^^^^^^^^^^^^^
+>  8 |   FRAME_MS,
+     | ^^^^^^^^^^^
+>  9 |   GameState,
+     | ^^^^^^^^^^^^
+> 10 |   createInitialState,
+     | ^^^^^^^^^^^^^^^^^^^^^
+> 11 |   drawScene,
+     | ^^^^^^^^^^^^
+> 12 |   movePlayer,
+     | ^^^^^^^^^^^^^
+> 13 |   renderGameToText,
+     | ^^^^^^^^^^^^^^^^^^^
+> 14 |   restartGame,
+     | ^^^^^^^^^^^^^^
+> 15 |   startGame,
+     | ^^^^^^^^^^^^
+> 16 |   tick,
+     | ^^^^^^^
+> 17 |   togglePause,
+     | ^^^^^^^^^^^^^^
+> 18 | } from "./utils";
+     | ^^^^^^^^^^^^^^^^^
+  19 |
+  20 | declare global {
+  21 |   interface Window {
+
+The export movePlayer was not found in module [project]/web-games/src/app/games/kids-stair-rush/utils.ts [app-client] (ecmascript).
+Did you mean to import setPlayerInput?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import traces:
+  Client Component Browser:
+    ./web-games/src/app/games/kids-stair-rush/page.tsx [Client Component Browser]
+    ./web-games/src/app/games/kids-stair-rush/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./web-games/src/app/games/kids-stair-rush/page.tsx [Client Component SSR]
+    ./web-games/src/app/games/kids-stair-rush/page.tsx [Server Component] @ http://localhost:3000/WebGames/_next/static/chunks/0dm4_next_dist_0gmg5b9._.js:3272
+[  562727ms] [ERROR] ./web-games/src/app/games/kids-stair-rush/page.tsx:5:1
+Export movePlayer doesn't exist in target module
+   3 | import { useCallback, useEffect, useRef } from "react";
+   4 | import Container from "@/components/common/Container";
+>  5 | import {
+     | ^^^^^^^
+>  6 |   CANVAS_HEIGHT,
+     | ^^^^^^^^^^^^^^^^
+>  7 |   CANVAS_WIDTH,
+     | ^^^^^^^^^^^^^^^
+>  8 |   FRAME_MS,
+     | ^^^^^^^^^^^
+>  9 |   GameState,
+     | ^^^^^^^^^^^^
+> 10 |   createInitialState,
+     | ^^^^^^^^^^^^^^^^^^^^^
+> 11 |   drawScene,
+     | ^^^^^^^^^^^^
+> 12 |   movePlayer,
+     | ^^^^^^^^^^^^^
+> 13 |   renderGameToText,
+     | ^^^^^^^^^^^^^^^^^^^
+> 14 |   restartGame,
+     | ^^^^^^^^^^^^^^
+> 15 |   startGame,
+     | ^^^^^^^^^^^^
+> 16 |   tick,
+     | ^^^^^^^
+> 17 |   togglePause,
+     | ^^^^^^^^^^^^^^
+> 18 | } from "./utils";
+     | ^^^^^^^^^^^^^^^^^
+  19 |
+  20 | declare global {
+  21 |   interface Window {
+
+The export movePlayer was not found in module [project]/web-games/src/app/games/kids-stair-rush/utils.ts [app-ssr] (ecmascript).
+Did you mean to import setPlayerInput?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import traces:
+  Client Component Browser:
+    ./web-games/src/app/games/kids-stair-rush/page.tsx [Client Component Browser]
+    ./web-games/src/app/games/kids-stair-rush/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./web-games/src/app/games/kids-stair-rush/page.tsx [Client Component SSR]
+    ./web-games/src/app/games/kids-stair-rush/page.tsx [Server Component] @ http://localhost:3000/WebGames/_next/static/chunks/0dm4_next_dist_0gmg5b9._.js:3272
+[  562849ms] [ERROR] ./web-games/src/app/games/kids-stair-rush/page.tsx:5:1
+Export movePlayer doesn't exist in target module
+   3 | import { useCallback, useEffect, useRef } from "react";
+   4 | import Container from "@/components/common/Container";
+>  5 | import {
+     | ^^^^^^^
+>  6 |   CANVAS_HEIGHT,
+     | ^^^^^^^^^^^^^^^^
+>  7 |   CANVAS_WIDTH,
+     | ^^^^^^^^^^^^^^^
+>  8 |   FRAME_MS,
+     | ^^^^^^^^^^^
+>  9 |   GameState,
+     | ^^^^^^^^^^^^
+> 10 |   createInitialState,
+     | ^^^^^^^^^^^^^^^^^^^^^
+> 11 |   drawScene,
+     | ^^^^^^^^^^^^
+> 12 |   movePlayer,
+     | ^^^^^^^^^^^^^
+> 13 |   renderGameToText,
+     | ^^^^^^^^^^^^^^^^^^^
+> 14 |   restartGame,
+     | ^^^^^^^^^^^^^^
+> 15 |   startGame,
+     | ^^^^^^^^^^^^
+> 16 |   tick,
+     | ^^^^^^^
+> 17 |   togglePause,
+     | ^^^^^^^^^^^^^^
+> 18 | } from "./utils";
+     | ^^^^^^^^^^^^^^^^^
+  19 |
+  20 | declare global {
+  21 |   interface Window {
+
+The export movePlayer was not found in module [project]/web-games/src/app/games/kids-stair-rush/utils.ts [app-client] (ecmascript).
+Did you mean to import setPlayerInput?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import traces:
+  Client Component Browser:
+    ./web-games/src/app/games/kids-stair-rush/page.tsx [Client Component Browser]
+    ./web-games/src/app/games/kids-stair-rush/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./web-games/src/app/games/kids-stair-rush/page.tsx [Client Component SSR]
+    ./web-games/src/app/games/kids-stair-rush/page.tsx [Server Component] @ http://localhost:3000/WebGames/_next/static/chunks/0dm4_next_dist_0gmg5b9._.js:3272
+[  562849ms] [ERROR] ./web-games/src/app/games/kids-stair-rush/page.tsx:5:1
+Export movePlayer doesn't exist in target module
+   3 | import { useCallback, useEffect, useRef } from "react";
+   4 | import Container from "@/components/common/Container";
+>  5 | import {
+     | ^^^^^^^
+>  6 |   CANVAS_HEIGHT,
+     | ^^^^^^^^^^^^^^^^
+>  7 |   CANVAS_WIDTH,
+     | ^^^^^^^^^^^^^^^
+>  8 |   FRAME_MS,
+     | ^^^^^^^^^^^
+>  9 |   GameState,
+     | ^^^^^^^^^^^^
+> 10 |   createInitialState,
+     | ^^^^^^^^^^^^^^^^^^^^^
+> 11 |   drawScene,
+     | ^^^^^^^^^^^^
+> 12 |   movePlayer,
+     | ^^^^^^^^^^^^^
+> 13 |   renderGameToText,
+     | ^^^^^^^^^^^^^^^^^^^
+> 14 |   restartGame,
+     | ^^^^^^^^^^^^^^
+> 15 |   startGame,
+     | ^^^^^^^^^^^^
+> 16 |   tick,
+     | ^^^^^^^
+> 17 |   togglePause,
+     | ^^^^^^^^^^^^^^
+> 18 | } from "./utils";
+     | ^^^^^^^^^^^^^^^^^
+  19 |
+  20 | declare global {
+  21 |   interface Window {
+
+The export movePlayer was not found in module [project]/web-games/src/app/games/kids-stair-rush/utils.ts [app-ssr] (ecmascript).
+Did you mean to import setPlayerInput?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import traces:
+  Client Component Browser:
+    ./web-games/src/app/games/kids-stair-rush/page.tsx [Client Component Browser]
+    ./web-games/src/app/games/kids-stair-rush/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./web-games/src/app/games/kids-stair-rush/page.tsx [Client Component SSR]
+    ./web-games/src/app/games/kids-stair-rush/page.tsx [Server Component] @ http://localhost:3000/WebGames/_next/static/chunks/0dm4_next_dist_0gmg5b9._.js:3272
