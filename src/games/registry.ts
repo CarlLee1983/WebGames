@@ -21,6 +21,15 @@ export const GAME_REGISTRY: GameDef[] = [
     status: 'published',
   },
   {
+    id: "tetris",
+    title: "Tetris",
+    description: "Stack the falling blocks to clear lines and score points. Don't let them reach the top!",
+    icon: "i-ph-squares-four-duotone",
+    href: "/games/tetris",
+    color: "bg-purple-500",
+    status: 'published',
+  },
+  {
     id: "gomoku",
     title: "Gomoku",
     description: "The strategy board game where you aim to get five in a row.",
