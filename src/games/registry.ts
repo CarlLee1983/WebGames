@@ -36,7 +36,7 @@ export const GAME_REGISTRY: GameDef[] = [
     icon: "i-ph-grid-nine-duotone",
     href: "/games/sudoku",
     color: "bg-blue-500",
-    status: 'planned',
+    status: 'published',
   },
   {
     id: "2048",
