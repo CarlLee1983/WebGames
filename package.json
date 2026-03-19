@@ -17,9 +17,11 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@unocss/postcss": "^66.6.7",
     "eslint": "^9",
     "eslint-config-next": "16.2.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "unocss": "^66.6.7"
   },
   "ignoreScripts": [
     "sharp",
