@@ -66,7 +66,15 @@ export default function FarmPage() {
     const tickedState = applyOfflineTick(initialState, currentTime);
     return tickedState;
   });
-  const [now, setNow] = useState<number>(() => Date.now());
+  const [now, setNow] = useState<number>(0); // 0 會在 useEffect 中更新
+
+  // =========================================================================
+  // 初始化時間（防止 hydration 錯誤）
+  // =========================================================================
+
+  useEffect(() => {
+    setNow(Date.now());
+  }, []);
 
   // =========================================================================
   // 自動保存
