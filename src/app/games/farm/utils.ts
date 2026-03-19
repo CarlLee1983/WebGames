@@ -265,11 +265,13 @@ export function tillPlot(state: FarmState, plotId: number): FarmState {
   const plot = state.plots[plotId];
   if (!plot || !plot.isUnlocked || plot.status !== 'empty') return state;
 
+  const newPlots: PlotState[] = state.plots.map((p) =>
+    p.id === plotId ? { ...p, status: 'tilled' as const } : p
+  );
+
   return {
     ...state,
-    plots: state.plots.map((p) =>
-      p.id === plotId ? { ...p, status: 'tilled' } : p
-    ),
+    plots: newPlots,
   };
 }
 
@@ -290,27 +292,27 @@ export function seedPlot(state: FarmState, plotId: number, cropId: string): Farm
   if (!hasSeed && !hasCoins) return state;
 
   const now = Date.now();
-  const newState = {
+  const newPlots: PlotState[] = state.plots.map((p) =>
+    p.id === plotId
+      ? {
+          ...p,
+          status: 'seeded' as const,
+          cropId,
+          waterCount: 0,
+          lastWateredAt: now,
+          plantedAt: now,
+        }
+      : p
+  );
+
+  return {
     ...state,
-    plots: state.plots.map((p) =>
-      p.id === plotId
-        ? {
-            ...p,
-            status: 'seeded',
-            cropId,
-            waterCount: 0,
-            lastWateredAt: now,
-            plantedAt: now,
-          }
-        : p
-    ),
+    plots: newPlots,
     player: {
       ...state.player,
       coins: hasSeed ? state.player.coins : state.player.coins - crop.buyPrice,
     },
   };
-
-  return newState;
 }
 
 export function waterPlot(state: FarmState, plotId: number, now: number): FarmState {
@@ -331,18 +333,20 @@ export function waterPlot(state: FarmState, plotId: number, now: number): FarmSt
   const newWaterCount = plot.waterCount + waterIncrement;
   const isReady = newWaterCount >= crop.waterNeeded;
 
+  const newPlots: PlotState[] = state.plots.map((p) =>
+    p.id === plotId
+      ? {
+          ...p,
+          status: (isReady ? 'ready' : 'growing') as PlotStatus,
+          waterCount: newWaterCount,
+          lastWateredAt: now,
+        }
+      : p
+  );
+
   return {
     ...state,
-    plots: state.plots.map((p) =>
-      p.id === plotId
-        ? {
-            ...p,
-            status: isReady ? 'ready' : 'growing',
-            waterCount: newWaterCount,
-            lastWateredAt: now,
-          }
-        : p
-    ),
+    plots: newPlots,
   };
 }
 
@@ -393,20 +397,22 @@ export function clearPlot(state: FarmState, plotId: number): FarmState {
   const plot = state.plots[plotId];
   if (!plot || plot.status !== 'wilted') return state;
 
+  const newPlots: PlotState[] = state.plots.map((p) =>
+    p.id === plotId
+      ? {
+          ...p,
+          status: 'empty' as const,
+          cropId: null,
+          waterCount: 0,
+          lastWateredAt: Date.now(),
+          plantedAt: 0,
+        }
+      : p
+  );
+
   return {
     ...state,
-    plots: state.plots.map((p) =>
-      p.id === plotId
-        ? {
-            ...p,
-            status: 'empty',
-            cropId: null,
-            waterCount: 0,
-            lastWateredAt: Date.now(),
-            plantedAt: 0,
-          }
-        : p
-    ),
+    plots: newPlots,
   };
 }
 
@@ -425,7 +431,7 @@ export function handlePlotClick(state: FarmState, plotId: number, now: number): 
 
   if (plot.status === 'seeded' || plot.status === 'growing') {
     const crop = CROP_DEFS[plot.cropId!];
-    if (crop && canWater(plot, crop, now, state.weather.current)) {
+    if (crop && canWater(plot, crop, now)) {
       return waterPlot(state, plotId, now);
     }
     return state;
@@ -447,19 +453,21 @@ export function handlePlotClick(state: FarmState, plotId: number, now: number): 
 
 export function applyOfflineTick(state: FarmState, now: number): FarmState {
   // 離線計算：檢查每個格子是否枯萎
+  const newPlots: PlotState[] = state.plots.map((plot) => {
+    if (!plot.cropId) return plot;
+    const crop = CROP_DEFS[plot.cropId];
+    if (!crop) return plot;
+
+    if (isWilted(plot, crop, now) && plot.status !== 'wilted') {
+      return { ...plot, status: 'wilted' as const };
+    }
+
+    return plot;
+  });
+
   return {
     ...state,
-    plots: state.plots.map((plot) => {
-      if (!plot.cropId) return plot;
-      const crop = CROP_DEFS[plot.cropId];
-      if (!crop) return plot;
-
-      if (isWilted(plot, crop, now) && plot.status !== 'wilted') {
-        return { ...plot, status: 'wilted' };
-      }
-
-      return plot;
-    }),
+    plots: newPlots,
   };
 }
 

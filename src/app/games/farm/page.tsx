@@ -26,21 +26,14 @@ import {
 } from './utils';
 
 export default function FarmPage() {
-  const [state, setState] = useState<FarmState | null>(null);
-  const [now, setNow] = useState<number>(0);
-
-  // =========================================================================
-  // 初始化
-  // =========================================================================
-
-  useEffect(() => {
+  const [state, setState] = useState<FarmState>(() => {
     const saved = loadFarmState();
     const initialState = saved ?? createInitialState();
     const currentTime = Date.now();
     const tickedState = applyOfflineTick(initialState, currentTime);
-    setState(tickedState);
-    setNow(currentTime);
-  }, []);
+    return tickedState;
+  });
+  const [now, setNow] = useState<number>(() => Date.now());
 
   // =========================================================================
   // 自動保存
@@ -50,15 +43,11 @@ export default function FarmPage() {
     if (!state) return;
 
     const timer = setInterval(() => {
-      setState((current) => {
-        if (!current) return current;
-        saveFarmState(current);
-        return current;
-      });
+      saveFarmState(state);
     }, AUTO_SAVE_INTERVAL);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [state]);
 
   // =========================================================================
   // 定時 Tick（天氣、成就等）
