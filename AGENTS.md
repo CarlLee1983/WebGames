@@ -44,6 +44,77 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Lint: `bun run lint`
 - Production export build: `bun run build`
 
+# Git Worktree 開發原則
+
+使用 Git Worktree 在獨立目錄開發新遊戲，避免主分支切換影響開發環境。
+
+## Worktree 目錄結構
+
+所有 Worktree 都放在 `.worktree/<slug>/` 下，例如：
+
+```
+.worktree/
+├── chess/
+├── flappy-bird/
+└── minesweeper/
+```
+
+## 建立 Worktree
+
+```bash
+git worktree add .worktree/<slug> -b feat/game-<slug>
+cd .worktree/<slug>
+```
+
+例如開發象棋遊戲：
+
+```bash
+git worktree add .worktree/chess -b feat/game-chess
+cd .worktree/chess
+```
+
+## 開發流程
+
+1. 在 Worktree 目錄開發遊戲：
+   ```bash
+   cd .worktree/<slug>
+   bun dev
+   ```
+
+2. 在 `http://localhost:3000/games/<slug>` 測試遊戲
+
+3. Commit 變更：
+   ```bash
+   git add .
+   git commit -m "feat: [game-<slug>] implementation"
+   ```
+
+4. 完成後返回主目錄
+
+## 清理 Worktree
+
+開發完成後清理工作區：
+
+```bash
+cd ..  # 返回主目錄
+git worktree remove .worktree/<slug>
+```
+
+然後合併分支到 `main`：
+
+```bash
+git switch main
+git merge feat/game-<slug>
+git branch -d feat/game-<slug>
+```
+
+## 注意事項
+
+- `.worktree/` 已加入 `.gitignore`，不會被追蹤
+- 每個 Worktree 是獨立的 Git 分支，互不影響
+- 同時開發多個遊戲時，各 Worktree 可同時運行不同 `bun dev` 實例（需不同 port）
+- Worktree 刪除後不影響 main 分支，請先確保變更已 commit
+
 # Change Checklist
 
 - When adding a new game:

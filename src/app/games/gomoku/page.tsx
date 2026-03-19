@@ -133,14 +133,12 @@ export default function GomokuGame() {
           </div>
 
           {/* Board Container */}
-          <div className="order-1 flex items-center justify-center lg:order-2">
-            <div className="relative rounded-lg bg-[#e6b36e] p-4 shadow-2xl border-8 border-[#c99a5a]">
+          <div className="order-1 flex w-full items-center justify-center px-2 lg:order-2">
+            <div className="relative w-full max-w-[600px] rounded-lg bg-[#e6b36e] p-2 shadow-2xl border-4 border-[#c99a5a] sm:p-4 sm:border-8">
               <div 
-                className="grid"
+                className="grid aspect-square w-full"
                 style={{
-                  gridTemplateColumns: `repeat(${BOARD_SIZE}, 1fr)`,
-                  width: 'min(85vw, 600px)',
-                  aspectRatio: '1 / 1'
+                  gridTemplateColumns: `repeat(${BOARD_SIZE}, 1fr)`
                 }}
               >
                 {board.map((row, rIdx) => 

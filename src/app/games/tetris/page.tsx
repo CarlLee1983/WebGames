@@ -713,12 +713,12 @@ export default function TetrisGame() {
             aria-label="Tetris game canvas"
           />
 
-          <div className="grid w-full max-w-[520px] grid-cols-2 gap-3 sm:grid-cols-5">
+          <div className="grid w-full max-w-[520px] grid-cols-4 gap-2 sm:gap-3">
             <button
               id="tetris-start"
               type="button"
               onClick={() => applyTransform(startGame)}
-              className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+              className="col-span-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
             >
               {primaryActionLabel}
             </button>
@@ -731,15 +731,6 @@ export default function TetrisGame() {
               {ui.mode === "paused" ? "Resume" : "Pause"}
             </button>
             <button
-              id="tetris-hold"
-              type="button"
-              onClick={() => applyTransform(holdPiece)}
-              disabled={holdDisabled}
-              className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-            >
-              {ui.canHold ? "Hold" : "Hold Locked"}
-            </button>
-            <button
               id="tetris-restart"
               type="button"
               onClick={() => commitState(restartGame())}
@@ -747,75 +738,83 @@ export default function TetrisGame() {
             >
               Restart
             </button>
-            <button
-              id="tetris-fullscreen"
-              type="button"
-              onClick={() => {
-                void toggleFullscreen();
-              }}
-              className="rounded-2xl bg-amber-400 px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-amber-300"
-            >
-              Fullscreen
-            </button>
           </div>
 
-          <div className="grid w-full max-w-[520px] grid-cols-2 gap-3 sm:grid-cols-5">
-            <button
-              type="button"
-              onClick={() => applyTransform((state) => movePiece(state, -1))}
-              className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
-            >
-              Left
-            </button>
-            <button
-              type="button"
-              onClick={() => applyTransform((state) => rotatePiece(state, -1))}
-              className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
-            >
-              Rotate L
-            </button>
-            <button
-              type="button"
-              onClick={() => applyTransform((state) => rotatePiece(state, 1))}
-              className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
-            >
-              Rotate R
-            </button>
-            <button
-              type="button"
-              onClick={() => applyTransform((state) => movePiece(state, 1))}
-              className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
-            >
-              Right
-            </button>
-            <button
-              type="button"
-              onClick={() => applyTransform(softDrop)}
-              className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
-            >
-              Soft Drop
-            </button>
-            <button
-              type="button"
-              onClick={() => applyTransform(hardDrop)}
-              className="col-span-2 rounded-2xl bg-cyan-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 sm:col-span-5"
-            >
-              Hard Drop
-            </button>
+          {/* Mobile-friendly Virtual Controls */}
+          <div className="flex w-full max-w-[520px] flex-col gap-3">
+            <div className="grid grid-cols-4 gap-2">
+               <button
+                type="button"
+                onClick={() => applyTransform(holdPiece)}
+                disabled={holdDisabled}
+                className="flex h-14 flex-col items-center justify-center rounded-2xl bg-white font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:opacity-50 active:scale-95"
+              >
+                <span className="i-ph-hand-grabbing-duotone mb-1 text-xl" />
+                <span className="text-[10px] uppercase tracking-wide">Hold</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => applyTransform((state) => rotatePiece(state, -1))}
+                className="flex h-14 flex-col items-center justify-center rounded-2xl bg-white font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 active:scale-95"
+              >
+                <span className="i-ph-arrow-counter-clockwise-bold mb-1 text-xl" />
+                <span className="text-[10px] uppercase tracking-wide">Rot L</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => applyTransform((state) => rotatePiece(state, 1))}
+                className="flex h-14 flex-col items-center justify-center rounded-2xl bg-white font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 active:scale-95"
+              >
+                <span className="i-ph-arrow-clockwise-bold mb-1 text-xl" />
+                <span className="text-[10px] uppercase tracking-wide">Rot R</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => applyTransform(hardDrop)}
+                className="flex h-14 flex-col items-center justify-center rounded-2xl bg-cyan-500 font-bold text-cyan-950 shadow-sm transition hover:bg-cyan-400 active:scale-95"
+              >
+                <span className="i-ph-caret-double-down-bold mb-1 text-xl" />
+                <span className="text-[10px] uppercase tracking-wide">Hard</span>
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => applyTransform((state) => movePiece(state, -1))}
+                className="flex h-16 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 shadow-inner transition hover:bg-slate-200 active:scale-95"
+              >
+                <span className="i-ph-caret-left-bold text-3xl" />
+              </button>
+              <button
+                type="button"
+                onClick={() => applyTransform(softDrop)}
+                className="flex h-16 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 shadow-inner transition hover:bg-slate-200 active:scale-95"
+              >
+                <span className="i-ph-caret-down-bold text-3xl" />
+              </button>
+              <button
+                type="button"
+                onClick={() => applyTransform((state) => movePiece(state, 1))}
+                className="flex h-16 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 shadow-inner transition hover:bg-slate-200 active:scale-95"
+              >
+                <span className="i-ph-caret-right-bold text-3xl" />
+              </button>
+            </div>
           </div>
 
           <dl className="grid w-full max-w-[520px] grid-cols-3 gap-3 text-center">
-            <div className="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
-              <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Score</dt>
-              <dd className="mt-1 text-2xl font-bold text-slate-900">{ui.score}</dd>
+            <div className="rounded-2xl bg-white px-2 py-3 shadow-sm ring-1 ring-slate-200 sm:px-4">
+              <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 sm:text-xs">Score</dt>
+              <dd className="mt-1 text-xl font-bold text-slate-900 sm:text-2xl">{ui.score}</dd>
             </div>
-            <div className="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
-              <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Level</dt>
-              <dd className="mt-1 text-2xl font-bold text-violet-600">{ui.level}</dd>
+            <div className="rounded-2xl bg-white px-2 py-3 shadow-sm ring-1 ring-slate-200 sm:px-4">
+              <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 sm:text-xs">Level</dt>
+              <dd className="mt-1 text-xl font-bold text-violet-600 sm:text-2xl">{ui.level}</dd>
             </div>
-            <div className="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
-              <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Lines</dt>
-              <dd className="mt-1 text-2xl font-bold text-cyan-600">{ui.lines}</dd>
+            <div className="rounded-2xl bg-white px-2 py-3 shadow-sm ring-1 ring-slate-200 sm:px-4">
+              <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 sm:text-xs">Lines</dt>
+              <dd className="mt-1 text-xl font-bold text-cyan-600 sm:text-2xl">{ui.lines}</dd>
             </div>
           </dl>
         </div>

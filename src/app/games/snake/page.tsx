@@ -47,6 +47,25 @@ export default function SnakeGame() {
     generateFood(INITIAL_SNAKE);
   }, [generateFood]);
 
+  const changeDirection = useCallback((dir: 'UP' | 'DOWN' | 'LEFT' | 'RIGHT') => {
+    if (gameOver || isPaused) return;
+    const currentDir = directionRef.current;
+    switch (dir) {
+      case "UP":
+        if (currentDir.y !== 1) nextDirectionRef.current = { x: 0, y: -1 };
+        break;
+      case "DOWN":
+        if (currentDir.y !== -1) nextDirectionRef.current = { x: 0, y: 1 };
+        break;
+      case "LEFT":
+        if (currentDir.x !== 1) nextDirectionRef.current = { x: -1, y: 0 };
+        break;
+      case "RIGHT":
+        if (currentDir.x !== -1) nextDirectionRef.current = { x: 1, y: 0 };
+        break;
+    }
+  }, [gameOver, isPaused]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) {
@@ -57,33 +76,32 @@ export default function SnakeGame() {
         setIsPaused((p) => !p);
         return;
       }
-      const currentDir = directionRef.current;
       switch (e.key) {
         case "ArrowUp":
         case "w":
         case "W":
-          if (currentDir.y !== 1) nextDirectionRef.current = { x: 0, y: -1 };
+          changeDirection("UP");
           break;
         case "ArrowDown":
         case "s":
         case "S":
-          if (currentDir.y !== -1) nextDirectionRef.current = { x: 0, y: 1 };
+          changeDirection("DOWN");
           break;
         case "ArrowLeft":
         case "a":
         case "A":
-          if (currentDir.x !== 1) nextDirectionRef.current = { x: -1, y: 0 };
+          changeDirection("LEFT");
           break;
         case "ArrowRight":
         case "d":
         case "D":
-          if (currentDir.x !== -1) nextDirectionRef.current = { x: 1, y: 0 };
+          changeDirection("RIGHT");
           break;
       }
     };
     window.addEventListener("keydown", handleKeyDown, { passive: false });
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [gameOver]);
+  }, [gameOver, changeDirection]);
 
   useEffect(() => {
     if (gameOver || isPaused) return;
@@ -211,6 +229,40 @@ export default function SnakeGame() {
                 <p className="mt-2 font-medium text-gray-200">Press Space to resume</p>
               </div>
             )}
+          </div>
+
+          {/* Mobile Controls */}
+          <div className="mt-8 grid grid-cols-3 gap-2 sm:hidden">
+            <div />
+            <button
+              className="flex h-14 w-14 items-center justify-center rounded-xl bg-gray-100 text-gray-700 shadow-sm active:bg-gray-200 active:scale-95"
+              onClick={() => changeDirection("UP")}
+              aria-label="Up"
+            >
+              <span className="i-ph-caret-up-bold text-2xl" />
+            </button>
+            <div />
+            <button
+              className="flex h-14 w-14 items-center justify-center rounded-xl bg-gray-100 text-gray-700 shadow-sm active:bg-gray-200 active:scale-95"
+              onClick={() => changeDirection("LEFT")}
+              aria-label="Left"
+            >
+              <span className="i-ph-caret-left-bold text-2xl" />
+            </button>
+            <button
+              className="flex h-14 w-14 items-center justify-center rounded-xl bg-gray-100 text-gray-700 shadow-sm active:bg-gray-200 active:scale-95"
+              onClick={() => changeDirection("DOWN")}
+              aria-label="Down"
+            >
+              <span className="i-ph-caret-down-bold text-2xl" />
+            </button>
+            <button
+              className="flex h-14 w-14 items-center justify-center rounded-xl bg-gray-100 text-gray-700 shadow-sm active:bg-gray-200 active:scale-95"
+              onClick={() => changeDirection("RIGHT")}
+              aria-label="Right"
+            >
+              <span className="i-ph-caret-right-bold text-2xl" />
+            </button>
           </div>
         </div>
       </Container>

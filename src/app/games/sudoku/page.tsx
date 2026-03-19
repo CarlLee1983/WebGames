@@ -119,7 +119,7 @@ export default function SudokuGame() {
           </div>
         </div>
 
-        <div className="mx-auto flex w-full max-w-lg flex-col items-center rounded-3xl bg-white p-6 shadow-xl sm:p-8">
+        <div className="mx-auto flex w-full max-w-lg flex-col items-center rounded-2xl sm:rounded-3xl bg-white p-3 shadow-xl sm:p-8">
           
           {/* Game Board */}
           <div className="relative mb-8 w-full select-none" style={{ aspectRatio: '1/1' }}>
@@ -150,7 +150,7 @@ export default function SudokuGame() {
                     <div
                       key={`${r}-${c}`}
                       onClick={() => handleCellClick(r, c)}
-                      className={`flex items-center justify-center text-xl sm:text-2xl font-bold cursor-pointer transition-colors
+                      className={`flex items-center justify-center text-lg sm:text-2xl font-bold cursor-pointer transition-colors
                         ${bgClass} ${textClass} ${borderRight} ${borderBottom}
                         ${!isOriginal && !isSolved ? 'hover:bg-blue-100' : ''}
                       `}
