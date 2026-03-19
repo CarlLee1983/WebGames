@@ -75,6 +75,15 @@ export const GAME_REGISTRY: GameDef[] = [
     status: 'published',
   },
   {
+    id: "kids-stair-rush",
+    title: "Kids Stair Rush",
+    description: "Help the little one dash down the stairs! Dodge obstacles and react fast as the stairs speed up.",
+    icon: "i-ph-stairs-duotone",
+    href: "/games/kids-stair-rush",
+    color: "bg-sky-500",
+    status: 'published',
+  },
+  {
     id: "2048",
     title: "2048",
     description: "Join the numbers and get to the 2048 tile!",
