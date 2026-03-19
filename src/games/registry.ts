@@ -21,6 +21,15 @@ export const GAME_REGISTRY: GameDef[] = [
     status: 'published',
   },
   {
+    id: "gomoku",
+    title: "Gomoku",
+    description: "The strategy board game where you aim to get five in a row.",
+    icon: "i-ph-circle-duotone",
+    href: "/games/gomoku",
+    color: "bg-amber-600",
+    status: 'published',
+  },
+  {
     id: "sudoku",
     title: "Sudoku",
     description: "The classic logic-based number placement puzzle game.",
