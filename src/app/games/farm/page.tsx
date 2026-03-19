@@ -462,56 +462,113 @@ function PlotCell({ plot, now, onPlotClick }: PlotCellProps) {
   let displayContent = '';
   let hoverText = '';
   let isReady = false;
+  let waterProgress = 0;
+  let canWaterNow = false;
+  let countdown = 0;
 
   if (plot.status === 'empty') {
     displayContent = '🌍';
-    hoverText = 'TILL';
+    hoverText = 'TILL SOIL';
     bgColor = '#8b4513';
   } else if (plot.status === 'tilled') {
     displayContent = '🌱';
-    hoverText = 'SEED';
+    hoverText = 'PLANT SEED';
     bgColor = '#a0522d';
   } else if (plot.status === 'wilted') {
     displayContent = '💀';
-    hoverText = 'CLEAR';
+    hoverText = 'CLEAR DEAD';
     bgColor = '#404040';
   } else if (crop) {
     if (plot.status === 'seeded' || plot.status === 'growing') {
       displayContent = crop.emoji;
-      const canWaterNow = canWater(plot, crop, now);
-      const countdown = msUntilNextWater(plot, crop, now);
+      canWaterNow = canWater(plot, crop, now);
+      countdown = msUntilNextWater(plot, crop, now);
+      waterProgress = (plot.waterCount / crop.waterNeeded) * 100;
 
       if (canWaterNow) {
-        hoverText = `${crop.name} - ${plot.waterCount}/${crop.waterNeeded} [WATER]`;
+        hoverText = `${crop.name}\n${plot.waterCount}/${crop.waterNeeded} WATERS\n[CLICK TO WATER]`;
         bgColor = '#6ec34d';
       } else {
-        hoverText = `${crop.name} - ${plot.waterCount}/${crop.waterNeeded} (${formatCountdown(countdown)})`;
+        hoverText = `${crop.name}\n${plot.waterCount}/${crop.waterNeeded} WATERS\nWAIT: ${formatCountdown(countdown)}`;
         bgColor = '#5ca03d';
       }
     } else if (plot.status === 'ready') {
       displayContent = crop.emoji;
-      hoverText = `${crop.name} - HARVEST!`;
+      hoverText = `${crop.name}\nREADY TO HARVEST!`;
       isReady = true;
       bgColor = '#ffd700';
+      waterProgress = 100;
     }
   }
 
   return (
-    <button
-      onClick={() => onPlotClick(plot.id)}
-      title={hoverText}
-      className={`pixel-btn w-16 h-16 text-2xl font-black flex items-center justify-center cursor-pointer`}
-      style={{
-        backgroundColor: bgColor,
-        border: '2px solid #000',
-        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.2), 0 2px 4px rgba(0,0,0,0.5)',
-        animation: isReady ? 'pixelFlash 0.8s step-start infinite' : 'none',
-      }}
-      onMouseDown={(e) => (e.currentTarget.style.transform = 'translate(1px, 1px)')}
-      onMouseUp={(e) => (e.currentTarget.style.transform = 'translate(0, 0)')}
-    >
-      {displayContent}
-    </button>
+    <div className="relative">
+      <button
+        onClick={() => onPlotClick(plot.id)}
+        title={hoverText}
+        className={`pixel-btn w-16 h-16 text-2xl font-black flex items-center justify-center cursor-pointer relative`}
+        style={{
+          backgroundColor: bgColor,
+          border: '2px solid #000',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.2), 0 2px 4px rgba(0,0,0,0.5)',
+          animation: isReady ? 'pixelFlash 0.8s step-start infinite' : 'none',
+        }}
+        onMouseDown={(e) => (e.currentTarget.style.transform = 'translate(1px, 1px)')}
+        onMouseUp={(e) => (e.currentTarget.style.transform = 'translate(0, 0)')}
+      >
+        {displayContent}
+      </button>
+
+      {/* 收成進度條 */}
+      {crop && (plot.status === 'seeded' || plot.status === 'growing' || plot.status === 'ready') && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '2px',
+            left: '2px',
+            right: '2px',
+            height: '4px',
+            backgroundColor: '#404040',
+            border: '1px solid #000',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              height: '100%',
+              width: `${Math.min(waterProgress, 100)}%`,
+              backgroundColor: waterProgress >= 100 ? '#ffd700' : '#6ec34d',
+              transition: 'width 0.2s step-end',
+            }}
+          />
+        </div>
+      )}
+
+      {/* 澆水冷卻指示器（圓形倒計時） */}
+      {crop && (plot.status === 'seeded' || plot.status === 'growing') && !canWaterNow && countdown > 0 && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '2px',
+            right: '2px',
+            width: '12px',
+            height: '12px',
+            backgroundColor: '#808080',
+            border: '1px solid #000',
+            borderRadius: '2px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '8px',
+            fontWeight: 'bold',
+            color: '#000',
+          }}
+          title={`冷卻中：${formatCountdown(countdown)}`}
+        >
+          ⏳
+        </div>
+      )}
+    </div>
   );
 }
 
