@@ -4,13 +4,16 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Container from "@/components/common/Container";
 
 const GRID_SIZE = 20;
-const CELL_SIZE = 30; // 放大尺寸
 const INITIAL_SNAKE = [{ x: 10, y: 10 }];
 const INITIAL_DIRECTION = { x: 0, y: -1 }; // UP
-const INITIAL_SPEED = 150;
-const MIN_SPEED = 50;
 
 type Point = { x: number; y: number };
+type Difficulty = 'EASY' | 'NORMAL';
+
+const DIFFICULTY_CONFIG = {
+  EASY: { initialSpeed: 250, minSpeed: 80, speedStep: 5 },
+  NORMAL: { initialSpeed: 150, minSpeed: 50, speedStep: 10 }
+};
 
 export default function SnakeGame() {
   const [snake, setSnake] = useState<Point[]>(INITIAL_SNAKE);
@@ -18,9 +21,11 @@ export default function SnakeGame() {
   const [gameOver, setGameOver] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [score, setScore] = useState(0);
+  const [difficulty, setDifficulty] = useState<Difficulty>('NORMAL');
 
   const directionRef = useRef(INITIAL_DIRECTION);
   const nextDirectionRef = useRef(INITIAL_DIRECTION);
+  const touchStartRef = useRef<Point | null>(null);
 
   const generateFood = useCallback((currentSnake: Point[]) => {
     let newFood: Point;
@@ -65,6 +70,30 @@ export default function SnakeGame() {
         break;
     }
   }, [gameOver, isPaused]);
+
+  // Touch handlers for mobile gestures
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!touchStartRef.current) return;
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - touchStartRef.current.x;
+    const dy = touch.clientY - touchStartRef.current.y;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+
+    if (Math.max(absX, absY) > 30) { // Threshold
+      if (absX > absY) {
+        changeDirection(dx > 0 ? 'RIGHT' : 'LEFT');
+      } else {
+        changeDirection(dy > 0 ? 'DOWN' : 'UP');
+      }
+    }
+    touchStartRef.current = null;
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -111,7 +140,7 @@ export default function SnakeGame() {
         directionRef.current = currentDir;
         const head = prevSnake[0];
         
-        // 穿牆 (Wrap-around) 邏輯
+        // Wrap-around logic
         const newHead = {
           x: (head.x + currentDir.x + GRID_SIZE) % GRID_SIZE,
           y: (head.y + currentDir.y + GRID_SIZE) % GRID_SIZE,
@@ -132,10 +161,12 @@ export default function SnakeGame() {
         return newSnake;
       });
     };
-    const currentSpeed = Math.max(MIN_SPEED, INITIAL_SPEED - Math.floor(score / 50) * 10);
+    
+    const config = DIFFICULTY_CONFIG[difficulty];
+    const currentSpeed = Math.max(config.minSpeed, config.initialSpeed - Math.floor(score / 50) * config.speedStep);
     const intervalId = setInterval(moveSnake, currentSpeed);
     return () => clearInterval(intervalId);
-  }, [food, gameOver, isPaused, score, generateFood]);
+  }, [food, gameOver, isPaused, score, difficulty, generateFood]);
 
   return (
     <div className="py-12 sm:py-16">
@@ -144,18 +175,37 @@ export default function SnakeGame() {
           <h1 className="mb-2 flex items-center justify-center gap-3 text-4xl font-extrabold text-green-600 sm:text-5xl">
             <span className="i-ph-snake-duotone" /> Snake
           </h1>
-          <p className="text-gray-600">Now with wrap-around walls! Use Arrows or WASD. Space to pause.</p>
+          <p className="text-gray-600">Now with wrap-around walls! Use Arrows, WASD, or Swipe on mobile.</p>
         </div>
 
         <div className="mx-auto flex w-full max-w-2xl flex-col items-center rounded-3xl bg-white p-6 shadow-xl sm:p-8">
-          <div className="mb-6 flex w-full max-w-[600px] items-center justify-between">
-            <div className="flex flex-col">
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Score</span>
-              <span className="text-3xl font-black text-gray-800">{score}</span>
+          <div className="mb-6 flex w-full flex-col items-center justify-between gap-4 sm:flex-row">
+            <div className="flex items-center gap-8">
+              <div className="flex flex-col">
+                <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Score</span>
+                <span className="text-3xl font-black text-gray-800">{score}</span>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Difficulty</span>
+                <div className="flex overflow-hidden rounded-lg bg-gray-100 p-1">
+                  <button
+                    onClick={() => { setDifficulty('EASY'); resetGame(); }}
+                    className={`px-3 py-1 text-xs font-bold transition ${difficulty === 'EASY' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  >
+                    EASY
+                  </button>
+                  <button
+                    onClick={() => { setDifficulty('NORMAL'); resetGame(); }}
+                    className={`px-3 py-1 text-xs font-bold transition ${difficulty === 'NORMAL' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  >
+                    NORMAL
+                  </button>
+                </div>
+              </div>
             </div>
             <button
               onClick={resetGame}
-              className="flex items-center gap-2 rounded-xl bg-gray-100 px-5 py-2.5 font-bold text-gray-700 transition hover:bg-gray-200 active:scale-95"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-gray-100 px-5 py-2.5 font-bold text-gray-700 transition hover:bg-gray-200 active:scale-95 sm:w-auto"
             >
               <span className="i-ph-arrows-clockwise-duotone h-5 w-5" />
               Restart
@@ -163,26 +213,29 @@ export default function SnakeGame() {
           </div>
 
           <div 
-            className="relative overflow-hidden rounded-xl border-4 border-gray-100 bg-gray-50 shadow-inner"
+            className="relative w-full overflow-hidden rounded-xl border-4 border-gray-100 bg-gray-50 shadow-inner md:max-w-[500px]"
             style={{ 
-              width: `${GRID_SIZE * CELL_SIZE}px`, 
-              height: `${GRID_SIZE * CELL_SIZE}px`,
-              maxWidth: '100%',
-              aspectRatio: '1 / 1'
+              aspectRatio: '1 / 1',
+              touchAction: 'none' // Prevent scrolling while playing
             }}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
           >
+            {/* Food */}
             <div
               className="absolute rounded-full bg-red-500 shadow-sm"
               style={{
-                width: `${CELL_SIZE}px`,
-                height: `${CELL_SIZE}px`,
-                left: `${food.x * CELL_SIZE}px`,
-                top: `${food.y * CELL_SIZE}px`,
+                width: '5%',
+                height: '5%',
+                left: `${food.x * 5}%`,
+                top: `${food.y * 5}%`,
                 transform: 'scale(0.8)',
-                boxShadow: '0 0 10px rgba(239, 68, 68, 0.6)'
+                boxShadow: '0 0 10px rgba(239, 68, 68, 0.6)',
+                zIndex: 5
               }}
             />
 
+            {/* Snake */}
             {snake.map((segment, index) => {
               const isHead = index === 0;
               return (
@@ -190,24 +243,25 @@ export default function SnakeGame() {
                   key={`${segment.x}-${segment.y}-${index}`}
                   className={`absolute rounded-sm ${isHead ? 'bg-green-600 z-10' : 'bg-green-400'}`}
                   style={{
-                    width: `${CELL_SIZE}px`,
-                    height: `${CELL_SIZE}px`,
-                    left: `${segment.x * CELL_SIZE}px`,
-                    top: `${segment.y * CELL_SIZE}px`,
+                    width: '5%',
+                    height: '5%',
+                    left: `${segment.x * 5}%`,
+                    top: `${segment.y * 5}%`,
                     transform: isHead ? 'scale(1.05)' : 'scale(0.9)',
                     transition: 'left 0.1s linear, top 0.1s linear'
                   }}
                 >
                   {isHead && (
                     <div className="relative h-full w-full">
-                      <div className="absolute left-1.5 top-1.5 h-2 w-2 rounded-full bg-white/80" />
-                      <div className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-white/80" />
+                      <div className="absolute left-[20%] top-[20%] h-[20%] w-[20%] rounded-full bg-white/80" />
+                      <div className="absolute right-[20%] top-[20%] h-[20%] w-[20%] rounded-full bg-white/80" />
                     </div>
                   )}
                 </div>
               );
             })}
 
+            {/* Overlays */}
             {gameOver && (
               <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/60 text-white backdrop-blur-sm">
                 <div className="i-ph-skull-duotone mb-2 h-16 w-16 text-red-400" />
@@ -226,43 +280,53 @@ export default function SnakeGame() {
               <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/40 text-white backdrop-blur-sm">
                 <div className="i-ph-pause-circle-duotone mb-2 h-16 w-16 text-white/80" />
                 <h2 className="text-3xl font-black tracking-widest text-white/90">PAUSED</h2>
-                <p className="mt-2 font-medium text-gray-200">Press Space to resume</p>
+                <p className="mt-2 font-medium text-gray-200">Press Space or Tap to resume</p>
+                <button 
+                  onClick={() => setIsPaused(false)}
+                  className="mt-6 rounded-lg bg-white/20 px-6 py-2 font-bold hover:bg-white/30"
+                >
+                  Resume
+                </button>
               </div>
             )}
           </div>
 
-          {/* Mobile Controls */}
+          {/* D-Pad Controls (Better visible for touch users) */}
           <div className="mt-8 grid grid-cols-3 gap-2 sm:hidden">
             <div />
             <button
-              className="flex h-14 w-14 items-center justify-center rounded-xl bg-gray-100 text-gray-700 shadow-sm active:bg-gray-200 active:scale-95"
+              className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 shadow-sm active:bg-gray-200 active:scale-95 active:bg-green-100 active:text-green-600"
               onClick={() => changeDirection("UP")}
               aria-label="Up"
             >
-              <span className="i-ph-caret-up-bold text-2xl" />
+              <span className="i-ph-caret-up-bold text-3xl" />
             </button>
             <div />
             <button
-              className="flex h-14 w-14 items-center justify-center rounded-xl bg-gray-100 text-gray-700 shadow-sm active:bg-gray-200 active:scale-95"
+              className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 shadow-sm active:bg-gray-200 active:scale-95 active:bg-green-100 active:text-green-600"
               onClick={() => changeDirection("LEFT")}
               aria-label="Left"
             >
-              <span className="i-ph-caret-left-bold text-2xl" />
+              <span className="i-ph-caret-left-bold text-3xl" />
             </button>
             <button
-              className="flex h-14 w-14 items-center justify-center rounded-xl bg-gray-100 text-gray-700 shadow-sm active:bg-gray-200 active:scale-95"
+              className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 shadow-sm active:bg-gray-200 active:scale-95 active:bg-green-100 active:text-green-600"
               onClick={() => changeDirection("DOWN")}
               aria-label="Down"
             >
-              <span className="i-ph-caret-down-bold text-2xl" />
+              <span className="i-ph-caret-down-bold text-3xl" />
             </button>
             <button
-              className="flex h-14 w-14 items-center justify-center rounded-xl bg-gray-100 text-gray-700 shadow-sm active:bg-gray-200 active:scale-95"
+              className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 shadow-sm active:bg-gray-200 active:scale-95 active:bg-green-100 active:text-green-600"
               onClick={() => changeDirection("RIGHT")}
               aria-label="Right"
             >
-              <span className="i-ph-caret-right-bold text-2xl" />
+              <span className="i-ph-caret-right-bold text-3xl" />
             </button>
+          </div>
+          
+          <div className="mt-6 hidden text-center text-sm text-gray-400 sm:block">
+            Tip: Use Arrow keys or WASD to control. Space to pause.
           </div>
         </div>
       </Container>
