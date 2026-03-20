@@ -217,7 +217,7 @@ export default function BattleshipBlitzPage() {
 
     // Draw player bullets
     state.playerBullets.forEach((bullet) => {
-      if (bullet.width > 6) { // Missiles
+      if (bullet.type === 'missile') {
         ctx.save();
         ctx.translate(bullet.x + bullet.width / 2, bullet.y + bullet.height / 2);
         ctx.rotate(Math.atan2(bullet.vy, bullet.vx) + Math.PI / 2);
@@ -225,7 +225,19 @@ export default function BattleshipBlitzPage() {
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(-bullet.width/4, -bullet.height/2, bullet.width/2, bullet.height);
         ctx.restore();
-      } else {
+      } else if (bullet.type === 'laser') {
+        fillGlowRect(bullet.x, bullet.y, bullet.width, bullet.height, "#44aaff", 15);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(bullet.x + bullet.width/2 - 2, bullet.y, 4, bullet.height);
+      } else if (bullet.type === 'spread') {
+        ctx.save();
+        ctx.translate(bullet.x + bullet.width / 2, bullet.y + bullet.height / 2);
+        ctx.rotate(Math.atan2(bullet.vy, bullet.vx) + Math.PI / 2);
+        fillGlowRect(-bullet.width/2, -bullet.height/2, bullet.width, bullet.height, "#00ff44", 10);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(-bullet.width/4, -bullet.height/4, bullet.width/2, bullet.height/2);
+        ctx.restore();
+      } else { // blaster
         fillGlowRect(bullet.x, bullet.y, bullet.width, bullet.height, "#00ffff", 12);
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(bullet.x + bullet.width/2 - 0.5, bullet.y + 1, 1, bullet.height - 2);
@@ -370,8 +382,13 @@ export default function BattleshipBlitzPage() {
     // Draw power-ups
     state.powerUps.forEach((powerUp) => {
       let color = "#00ff00";
-      if (powerUp.type === "weapon") color = "#ffff00";
-      if (powerUp.type === "shield") color = "#ff00ff";
+      let text = "W";
+      if (powerUp.type === "health") { color = "#00ff00"; text = "H"; }
+      else if (powerUp.type === "shield") { color = "#ff00ff"; text = "S"; }
+      else if (powerUp.type === "weapon_blaster") { color = "#ffff00"; text = "B"; }
+      else if (powerUp.type === "weapon_missile") { color = "#ff5500"; text = "M"; }
+      else if (powerUp.type === "weapon_laser") { color = "#44aaff"; text = "L"; }
+      else if (powerUp.type === "weapon_spread") { color = "#00ff44"; text = "S"; }
       
       const pulse = 10 + Math.sin(Date.now() / 150) * 8;
       
@@ -398,7 +415,7 @@ export default function BattleshipBlitzPage() {
       ctx.shadowBlur = 0;
       // Undo rotation for the text
       ctx.rotate(-Date.now() / 300);
-      ctx.fillText(powerUp.type.charAt(0).toUpperCase(), 0, 1);
+      ctx.fillText(text, 0, 1);
       ctx.restore();
     });
 
@@ -426,7 +443,7 @@ export default function BattleshipBlitzPage() {
     renderLives();
 
     ctx.fillStyle = state.player.weaponLevel >= 5 ? "#ffaa00" : "#ffffff";
-    ctx.fillText(`WPN: LV${state.player.weaponLevel < 5 ? state.player.weaponLevel : "MAX"}`, 15, 85);
+    ctx.fillText(`WPN: ${state.player.weaponType.toUpperCase()} LV${state.player.weaponLevel < 5 ? state.player.weaponLevel : "MAX"}`, 15, 85);
     ctx.shadowBlur = 0;
 
     if (state.combo > 1) {
@@ -609,14 +626,14 @@ export default function BattleshipBlitzPage() {
           <p className="text-cyan-300/80 text-sm tracking-[0.3em] mt-3 uppercase font-semibold">Retro Arcade Shooter</p>
         </div>
 
-        <div className="relative group w-full max-w-[600px] px-2 md:px-0">
+        <div className="relative group w-full max-w-[800px] px-2 md:px-0">
           <div className="absolute -inset-1 bg-gradient-to-b from-cyan-500 to-purple-600 rounded-2xl blur-md opacity-40 group-hover:opacity-60 transition duration-1000"></div>
           <div className="relative bg-[#0f0f18] rounded-xl border border-cyan-500/40 overflow-hidden shadow-2xl p-1 md:p-2 flex justify-center">
             <canvas
               ref={canvasRef}
               width={CANVAS_WIDTH}
               height={CANVAS_HEIGHT}
-              className="w-full aspect-[3/4] bg-[#0a0a14] rounded shadow-inner"
+              className="w-full aspect-[4/5] bg-[#0a0a14] rounded shadow-inner"
               style={{
                 imageRendering: "pixelated",
                 maxHeight: "70vh"
@@ -672,8 +689,11 @@ export default function BattleshipBlitzPage() {
               </div>
               <div className="space-y-4 border-l border-white/10 pl-4">
                 <p className="flex items-center gap-3 font-medium"><span className="w-4 h-4 rounded-full bg-green-400 animate-pulse border border-green-200" style={{ boxShadow: "0 0 12px rgba(74,222,128,0.8)" }} /> Repair (H)</p>
-                <p className="flex items-center gap-3 font-medium"><span className="w-4 h-4 rounded-full bg-yellow-400 animate-pulse border border-yellow-200" style={{ boxShadow: "0 0 12px rgba(250,204,21,0.8)" }} /> Upgrade (W)</p>
                 <p className="flex items-center gap-3 font-medium"><span className="w-4 h-4 rounded-full bg-fuchsia-400 animate-pulse border border-fuchsia-200" style={{ boxShadow: "0 0 12px rgba(232,121,249,0.8)" }} /> Shield (S)</p>
+                <p className="flex items-center gap-3 font-medium"><span className="w-4 h-4 rounded-full bg-yellow-400 animate-pulse border border-yellow-200" style={{ boxShadow: "0 0 12px rgba(250,204,21,0.8)" }} /> Blaster (B)</p>
+                <p className="flex items-center gap-3 font-medium"><span className="w-4 h-4 rounded-full bg-blue-400 animate-pulse border border-blue-200" style={{ boxShadow: "0 0 12px rgba(96,165,250,0.8)" }} /> Laser (L)</p>
+                <p className="flex items-center gap-3 font-medium"><span className="w-4 h-4 rounded-full bg-orange-500 animate-pulse border border-orange-300" style={{ boxShadow: "0 0 12px rgba(249,115,22,0.8)" }} /> Missile (M)</p>
+                <p className="flex items-center gap-3 font-medium"><span className="w-4 h-4 rounded-full bg-emerald-400 animate-pulse border border-emerald-200" style={{ boxShadow: "0 0 12px rgba(52,211,153,0.8)" }} /> Spread (S)</p>
                 <p className="text-xs text-gray-400 mt-4 leading-relaxed">Collect power-ups to upgrade weapons to MAX LEVEL (5) and survive!</p>
               </div>
             </div>

@@ -1,10 +1,11 @@
 // Battleship Blitz - SNES Retro Arcade Shooter
 // Canvas dimensions
-export const CANVAS_WIDTH = 600;
-export const CANVAS_HEIGHT = 800;
+export const CANVAS_WIDTH = 800;
+export const CANVAS_HEIGHT = 1000;
 
 // Game modes
 export type GameMode = 'menu' | 'playing' | 'gameOver' | 'paused';
+export type WeaponType = 'blaster' | 'missile' | 'laser' | 'spread';
 
 // Entity types
 export interface Player {
@@ -15,6 +16,7 @@ export interface Player {
   health: number;
   maxHealth: number;
   shootCooldown: number;
+  weaponType: WeaponType;
   weaponLevel: number;
   invulnerable: number;
 }
@@ -28,6 +30,9 @@ export interface Bullet {
   height: number;
   damage: number;
   isPlayerBullet: boolean;
+  type?: WeaponType | 'enemy';
+  piercing?: boolean;
+  homing?: boolean;
 }
 
 export interface Enemy {
@@ -50,7 +55,7 @@ export interface PowerUp {
   y: number;
   width: number;
   height: number;
-  type: 'health' | 'weapon' | 'shield';
+  type: 'health' | 'shield' | 'weapon_blaster' | 'weapon_missile' | 'weapon_laser' | 'weapon_spread';
   vy: number;
 }
 
@@ -94,6 +99,7 @@ export function createInitialState(): GameState {
       health: 100,
       maxHealth: 100,
       shootCooldown: 0,
+      weaponType: 'blaster',
       weaponLevel: 1,
       invulnerable: 0,
     },
@@ -195,59 +201,99 @@ export function updateGameState(
   if (input.shoot && shootCooldown <= 0) {
     const bulletX = newPlayerX + PLAYER_WIDTH / 2;
     const bulletY = newPlayerY;
+    const wType = newState.player.weaponType;
     const wLevel = newState.player.weaponLevel;
 
-    // Base shot
-    playerBullets.push({
-      x: bulletX - 3,
-      y: bulletY - 8,
-      vx: 0,
-      vy: -PLAYER_BULLET_SPEED,
-      width: 6,
-      height: 12,
-      damage: 25,
-      isPlayerBullet: true,
-    });
-
-    if (wLevel >= 2) {
-      playerBullets.push(
-        { x: bulletX - 12, y: bulletY - 4, vx: -60, vy: -PLAYER_BULLET_SPEED, width: 4, height: 10, damage: 20, isPlayerBullet: true },
-        { x: bulletX + 8, y: bulletY - 4, vx: 60, vy: -PLAYER_BULLET_SPEED, width: 4, height: 10, damage: 20, isPlayerBullet: true }
-      );
+    if (wType === 'blaster') {
+      playerBullets.push({ x: bulletX - 3, y: bulletY - 8, vx: 0, vy: -PLAYER_BULLET_SPEED, width: 6, height: 12, damage: 25, isPlayerBullet: true, type: 'blaster' });
+      if (wLevel >= 2) {
+        playerBullets.push(
+          { x: bulletX - 12, y: bulletY - 4, vx: -40, vy: -PLAYER_BULLET_SPEED, width: 4, height: 10, damage: 20, isPlayerBullet: true, type: 'blaster' },
+          { x: bulletX + 8, y: bulletY - 4, vx: 40, vy: -PLAYER_BULLET_SPEED, width: 4, height: 10, damage: 20, isPlayerBullet: true, type: 'blaster' }
+        );
+      }
+      if (wLevel >= 3) {
+        playerBullets.push(
+          { x: bulletX - 20, y: bulletY, vx: -80, vy: -PLAYER_BULLET_SPEED * 0.9, width: 4, height: 10, damage: 15, isPlayerBullet: true, type: 'blaster' },
+          { x: bulletX + 16, y: bulletY, vx: 80, vy: -PLAYER_BULLET_SPEED * 0.9, width: 4, height: 10, damage: 15, isPlayerBullet: true, type: 'blaster' }
+        );
+      }
+      if (wLevel >= 4) {
+        playerBullets.push(
+          { x: bulletX - 28, y: bulletY + 4, vx: -120, vy: -PLAYER_BULLET_SPEED * 0.8, width: 4, height: 10, damage: 15, isPlayerBullet: true, type: 'blaster' },
+          { x: bulletX + 24, y: bulletY + 4, vx: 120, vy: -PLAYER_BULLET_SPEED * 0.8, width: 4, height: 10, damage: 15, isPlayerBullet: true, type: 'blaster' }
+        );
+      }
+      if (wLevel >= 5) {
+        playerBullets.push(
+          { x: bulletX - 36, y: bulletY + 8, vx: -160, vy: -PLAYER_BULLET_SPEED * 0.7, width: 4, height: 10, damage: 15, isPlayerBullet: true, type: 'blaster' },
+          { x: bulletX + 32, y: bulletY + 8, vx: 160, vy: -PLAYER_BULLET_SPEED * 0.7, width: 4, height: 10, damage: 15, isPlayerBullet: true, type: 'blaster' }
+        );
+      }
+    } else if (wType === 'missile') {
+      const missileCount = wLevel * 2;
+      for (let i = 0; i < missileCount; i++) {
+        const spread = (i - (missileCount - 1) / 2) * 50;
+        playerBullets.push({
+          x: bulletX - 4, y: bulletY, vx: spread, vy: -PLAYER_BULLET_SPEED * 0.5, width: 8, height: 16, damage: 12, isPlayerBullet: true, type: 'missile', homing: true
+        });
+      }
+    } else if (wType === 'laser') {
+      const laserWidth = 8 + wLevel * 4;
+      playerBullets.push({
+        x: bulletX - laserWidth / 2, y: bulletY - 40, vx: 0, vy: -PLAYER_BULLET_SPEED * 1.5, width: laserWidth, height: 40, damage: 3 + wLevel, isPlayerBullet: true, type: 'laser', piercing: true
+      });
+    } else if (wType === 'spread') {
+      const spreadCount = 3 + wLevel * 2;
+      for (let i = 0; i < spreadCount; i++) {
+        const angle = (i - (spreadCount - 1) / 2) * 15;
+        const rad = angle * Math.PI / 180;
+        playerBullets.push({
+          x: bulletX - 4, y: bulletY, vx: Math.sin(rad) * PLAYER_BULLET_SPEED * 0.8, vy: -Math.cos(rad) * PLAYER_BULLET_SPEED * 0.8, width: 6, height: 6, damage: 15, isPlayerBullet: true, type: 'spread'
+        });
+      }
     }
-    
-    if (wLevel >= 3) {
-      playerBullets.push(
-        { x: bulletX - 20, y: bulletY, vx: -120, vy: -PLAYER_BULLET_SPEED * 0.9, width: 4, height: 10, damage: 15, isPlayerBullet: true },
-        { x: bulletX + 16, y: bulletY, vx: 120, vy: -PLAYER_BULLET_SPEED * 0.9, width: 4, height: 10, damage: 15, isPlayerBullet: true }
-      );
-    }
 
-    if (wLevel >= 4) {
-      playerBullets.push(
-        { x: bulletX - 28, y: bulletY + 4, vx: -180, vy: -PLAYER_BULLET_SPEED * 0.8, width: 4, height: 10, damage: 15, isPlayerBullet: true },
-        { x: bulletX + 24, y: bulletY + 4, vx: 180, vy: -PLAYER_BULLET_SPEED * 0.8, width: 4, height: 10, damage: 15, isPlayerBullet: true }
-      );
-    }
-
-    if (wLevel >= 5) {
-      // Missiles pointing outward slightly
-      playerBullets.push(
-        { x: newPlayerX - 10, y: newPlayerY + 10, vx: -50, vy: -PLAYER_BULLET_SPEED * 0.6, width: 8, height: 16, damage: 40, isPlayerBullet: true },
-        { x: newPlayerX + PLAYER_WIDTH + 2, y: newPlayerY + 10, vx: 50, vy: -PLAYER_BULLET_SPEED * 0.6, width: 8, height: 16, damage: 40, isPlayerBullet: true }
-      );
-    }
-
-    shootCooldown = PLAYER_SHOOT_COOLDOWN;
+    shootCooldown = wType === 'laser' ? 0.05 : (wType === 'missile' ? 0.35 : 0.12);
   }
 
   // Update bullets
   let filteredPlayerBullets = playerBullets.filter((b) => b.y > -20 && b.x > -20 && b.x < CANVAS_WIDTH + 20);
-  filteredPlayerBullets = filteredPlayerBullets.map((b) => ({
-    ...b,
-    x: b.x + b.vx * deltaTime,
-    y: b.y + b.vy * deltaTime,
-  }));
+  filteredPlayerBullets = filteredPlayerBullets.map((b) => {
+    let newVx = b.vx;
+    let newVy = b.vy;
+    if (b.homing && newState.enemies.length > 0) {
+      // Find nearest enemy
+      let nearest = newState.enemies[0];
+      let minDist = Infinity;
+      for (const e of newState.enemies) {
+        if (e.y < 0) continue; // Ignore enemies hasn't spawned fully
+        const dist = Math.hypot(e.x + e.width/2 - b.x, e.y + e.height/2 - b.y);
+        if (dist < minDist) {
+          minDist = dist;
+          nearest = e;
+        }
+      }
+      if (minDist !== Infinity) {
+        const angle = Math.atan2((nearest.y + nearest.height/2) - b.y, (nearest.x + nearest.width/2) - b.x);
+        const speed = Math.hypot(b.vx, b.vy);
+        const currentAngle = Math.atan2(b.vy, b.vx);
+        let diff = angle - currentAngle;
+        while (diff <= -Math.PI) diff += Math.PI * 2;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        const turn = Math.max(-Math.PI * 1.5 * deltaTime, Math.min(Math.PI * 1.5 * deltaTime, diff));
+        newVx = Math.cos(currentAngle + turn) * speed;
+        newVy = Math.sin(currentAngle + turn) * speed;
+      }
+    }
+    return {
+      ...b,
+      vx: newVx,
+      vy: newVy,
+      x: b.x + newVx * deltaTime,
+      y: b.y + newVy * deltaTime,
+    };
+  });
 
   // Wait, if wave is boss wave, spawn Boss.
   const isBossWave = newState.wave % 5 === 0;
@@ -255,6 +301,8 @@ export function updateGameState(
   // Spawn enemies based on wave
   let enemies = [...newState.enemies];
   let enemySpawnTimer = newState.enemySpawnTimer + deltaTime;
+  const timeInWave = newState.time - newState.waveStartTime;
+  const waveSpawnDuration = 15 + newState.wave;
 
   if (isBossWave && !newState.bossActive && enemies.length === 0) {
     // Spawn boss
@@ -273,7 +321,7 @@ export function updateGameState(
       pattern: 0,
       stateTime: 0,
     });
-  } else if (!isBossWave) {
+  } else if (!isBossWave && timeInWave < waveSpawnDuration) {
     const spawnRate = Math.max(0.4, 1.5 - newState.wave * 0.1);
     if (enemySpawnTimer > spawnRate && enemies.length < 5 + newState.wave) {
       const enemyType: 'basic' | 'fast' | 'heavy' =
@@ -444,7 +492,7 @@ export function updateGameState(
           return enemy;
         }
 
-        hit = true;
+        if (!bullet.piercing) hit = true;
         const newHealth = enemy.health - bullet.damage;
 
         if (newHealth <= 0) {
@@ -457,12 +505,13 @@ export function updateGameState(
           if (Math.random() < dropChance) {
             const numDrops = enemy.type === 'boss' ? 5 : 1;
             for(let i=0; i<numDrops; i++) {
-              const type: 'health' | 'weapon' | 'shield' =
-                Math.random() < 0.4
-                  ? 'health'
-                  : Math.random() < 0.7
-                    ? 'weapon'
-                    : 'shield';
+              const rand = Math.random();
+              let type: PowerUp['type'] = 'health';
+              if (rand > 0.8) type = 'shield';
+              else if (rand > 0.6) type = 'weapon_spread';
+              else if (rand > 0.4) type = 'weapon_laser';
+              else if (rand > 0.2) type = 'weapon_missile';
+              else type = 'weapon_blaster';
               powerUps.push({
                 x: enemy.x + enemy.width / 2 + (Math.random() * 40 - 20),
                 y: enemy.y + enemy.height / 2,
@@ -544,11 +593,14 @@ export function updateGameState(
         newState.player.maxHealth,
         playerHealth + 30
       );
-    } else if (powerUp.type === 'weapon') {
-      newState.player.weaponLevel = Math.min(
-        5,
-        newState.player.weaponLevel + 1
-      );
+    } else if (powerUp.type.startsWith('weapon_')) {
+      const wType = powerUp.type.replace('weapon_', '') as WeaponType;
+      if (newState.player.weaponType === wType) {
+        newState.player.weaponLevel = Math.min(5, newState.player.weaponLevel + 1);
+      } else {
+        newState.player.weaponType = wType;
+        newState.player.weaponLevel = Math.max(1, newState.player.weaponLevel - 1);
+      }
     } else if (powerUp.type === 'shield') {
       newInvulnerable = 5;
     }
@@ -581,11 +633,19 @@ export function updateGameState(
   }
 
   // Check wave completion
-  if (!bossActive && enemies.length === 0 && enemySpawnTimer > 3 && newState.enemies.length > 0) {
-    newState.wave += 1;
-    enemies = [];
-    enemySpawnTimer = 0;
-    combo = 0;
+  if (!bossActive && enemies.length === 0) {
+    // A wave is ready to transition if either:
+    // 1. It's a boss wave and the boss just died
+    // 2. It's a normal wave and the spawn duration is over
+    const isWaveFinished = (isBossWave && bossDied) || (!isBossWave && timeInWave >= waveSpawnDuration);
+    
+    if (isWaveFinished) {
+      newState.wave += 1;
+      newState.waveStartTime = newState.time;
+      enemies = [];
+      enemySpawnTimer = 0;
+      combo = 0;
+    }
   }
 
   return {
