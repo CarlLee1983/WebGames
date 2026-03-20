@@ -25,7 +25,7 @@ export interface Player {
 export interface GameEvent {
   type: 'move' | 'purchase' | 'pay_rent' | 'pass_start' | 'chance' | 'fortune' | 'bankruptcy';
   playerId: string;
-  details: Record<string, any>;
+  details: Record<string, string | number | boolean>;
   timestamp: number;
 }
 
@@ -65,7 +65,6 @@ const FORTUNE_CARDS = [
 
 export function generateBoard(): Tile[] {
   const board: Tile[] = [];
-  const propertyTypes: TileType[] = ['property', 'property', 'property', 'property'];
   const specialTypes: TileType[] = ['chance', 'fortune', 'jail', 'parking', 'go_to_jail'];
 
   board.push({

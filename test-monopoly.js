@@ -6,7 +6,7 @@ const { chromium } = require('playwright');
 
   try {
     console.log('Loading monopoly game...');
-    await page.goto('http://localhost:3000/games/monopoly', { waitUntil: 'networkidle' });
+    await page.goto('http://localhost:3000/games/monopoly', { waitUntil: 'load', timeout: 60000 });
 
     // Wait for canvas to be rendered
     await page.waitForSelector('canvas', { timeout: 5000 });
