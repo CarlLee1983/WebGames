@@ -44,3 +44,4 @@ next-env.d.ts
 output/
 progress.md
 .worktree/
+.playwright-mcp/
