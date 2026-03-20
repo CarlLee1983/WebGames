@@ -135,7 +135,7 @@ export const GAME_REGISTRY: GameDef[] = [
     icon: "i-ph-tank-duotone",
     href: "/games/battle-city",
     color: "bg-red-600",
-    status: 'beta',
+    status: 'published',
   },
 ];
 

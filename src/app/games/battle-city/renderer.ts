@@ -32,6 +32,14 @@ export const drawScene = (ctx: CanvasRenderingContext2D, state: GameState) => {
   ctx.fillStyle = COLORS.BACKGROUND;
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
+  // Apply screen shake effect
+  ctx.save();
+  if (state.shakeIntensity > 0) {
+    const shakeX = (Math.random() - 0.5) * state.shakeIntensity;
+    const shakeY = (Math.random() - 0.5) * state.shakeIntensity;
+    ctx.translate(shakeX, shakeY);
+  }
+
   // Draw game area border
   ctx.strokeStyle = COLORS.BORDER;
   ctx.lineWidth = 2;
@@ -63,6 +71,8 @@ export const drawScene = (ctx: CanvasRenderingContext2D, state: GameState) => {
   } else if (state.mode === "gameOver") {
     drawGameOverOverlay(ctx);
   }
+
+  ctx.restore();
 };
 
 const drawMap = (ctx: CanvasRenderingContext2D, state: GameState) => {

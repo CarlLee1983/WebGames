@@ -169,7 +169,7 @@ export default function BattleCityPage() {
             style={{ imageRendering: "crisp-edges" }}
           />
 
-          <div className="text-center text-gray-400 text-sm">
+          <div className="text-center text-gray-400 text-sm hidden sm:block">
             <p className="font-mono">
               <span className="text-yellow-400">W/A/S/D</span> or{" "}
               <span className="text-yellow-400">Arrow Keys</span> to move
@@ -183,6 +183,67 @@ export default function BattleCityPage() {
             <p className="font-mono">
               <span className="text-yellow-400">P</span> to pause
             </p>
+          </div>
+
+          {/* Mobile Controls */}
+          <div className="mt-6 flex flex-col gap-4 sm:hidden">
+            {/* Movement D-pad */}
+            <div className="grid grid-cols-3 gap-2">
+              <div />
+              <button
+                className="flex h-14 w-14 items-center justify-center rounded-lg bg-yellow-600 text-white shadow-md active:bg-yellow-700 active:scale-95 transition"
+                onClick={() => stateRef.current = setPlayerInput(stateRef.current, "UP")}
+                onTouchStart={() => stateRef.current = setPlayerInput(stateRef.current, "UP")}
+                onTouchEnd={() => stateRef.current = setPlayerInput(stateRef.current, "none")}
+                aria-label="Up"
+              >
+                <span className="i-ph-caret-up-bold text-xl" />
+              </button>
+              <div />
+              <button
+                className="flex h-14 w-14 items-center justify-center rounded-lg bg-yellow-600 text-white shadow-md active:bg-yellow-700 active:scale-95 transition"
+                onClick={() => stateRef.current = setPlayerInput(stateRef.current, "LEFT")}
+                onTouchStart={() => stateRef.current = setPlayerInput(stateRef.current, "LEFT")}
+                onTouchEnd={() => stateRef.current = setPlayerInput(stateRef.current, "none")}
+                aria-label="Left"
+              >
+                <span className="i-ph-caret-left-bold text-xl" />
+              </button>
+              <button
+                className="flex h-14 w-14 items-center justify-center rounded-lg bg-yellow-600 text-white shadow-md active:bg-yellow-700 active:scale-95 transition"
+                onClick={() => stateRef.current = setPlayerInput(stateRef.current, "DOWN")}
+                onTouchStart={() => stateRef.current = setPlayerInput(stateRef.current, "DOWN")}
+                onTouchEnd={() => stateRef.current = setPlayerInput(stateRef.current, "none")}
+                aria-label="Down"
+              >
+                <span className="i-ph-caret-down-bold text-xl" />
+              </button>
+              <button
+                className="flex h-14 w-14 items-center justify-center rounded-lg bg-yellow-600 text-white shadow-md active:bg-yellow-700 active:scale-95 transition"
+                onClick={() => stateRef.current = setPlayerInput(stateRef.current, "RIGHT")}
+                onTouchStart={() => stateRef.current = setPlayerInput(stateRef.current, "RIGHT")}
+                onTouchEnd={() => stateRef.current = setPlayerInput(stateRef.current, "none")}
+                aria-label="Right"
+              >
+                <span className="i-ph-caret-right-bold text-xl" />
+              </button>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex gap-3 justify-center">
+              <button
+                className="flex-1 rounded-lg bg-red-600 px-6 py-3 text-white font-bold shadow-md active:bg-red-700 active:scale-95 transition"
+                onClick={() => stateRef.current = shootBullet(stateRef.current)}
+              >
+                SHOOT
+              </button>
+              <button
+                className="rounded-lg bg-blue-600 px-6 py-3 text-white font-bold shadow-md active:bg-blue-700 active:scale-95 transition"
+                onClick={() => stateRef.current = togglePause(stateRef.current)}
+              >
+                PAUSE
+              </button>
+            </div>
           </div>
         </div>
       </div>

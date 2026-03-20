@@ -283,6 +283,9 @@ export const startGame = (state: GameState): GameState => {
 export const tick = (state: GameState, deltaMs: number): GameState => {
   let newState = { ...state, time: state.time + deltaMs };
 
+  // Update screen shake
+  newState.shakeIntensity = Math.max(0, newState.shakeIntensity - deltaMs * 0.02);
+
   if (newState.mode === "menu") {
     return newState;
   }
@@ -504,6 +507,26 @@ export const tick = (state: GameState, deltaMs: number): GameState => {
           if (dx < TANK_SIZE * TILE_SIZE && dy < TANK_SIZE * TILE_SIZE) {
             enemy.health -= bullet.power * 50;
             if (enemy.health <= 0) {
+              const enemyX = enemy.x + TANK_SIZE * TILE_SIZE / 2;
+              const enemyY = enemy.y + TANK_SIZE * TILE_SIZE / 2;
+
+              // Spawn explosion particles
+              for (let p = 0; p < 8; p++) {
+                const angle = (p / 8) * Math.PI * 2;
+                const speed = 2 + Math.random() * 2;
+                newState.particles.push({
+                  x: enemyX,
+                  y: enemyY,
+                  vx: Math.cos(angle) * speed,
+                  vy: Math.sin(angle) * speed,
+                  life: 400,
+                  maxLife: 400,
+                  color: "#ff6600",
+                  size: 3 + Math.random() * 2,
+                });
+              }
+
+              newState.shakeIntensity = 8;
               newState.enemies.splice(i, 1);
               delete newState.enemyAIMap[enemy.id];
               newState.enemiesDefeated++;
@@ -514,8 +537,8 @@ export const tick = (state: GameState, deltaMs: number): GameState => {
                 const powerUpTypes: PowerUpType[] = ["tank", "star", "bomb", "shield", "clock", "shovel"];
                 const randomType = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
                 newState.powerUp = {
-                  x: enemy.x + TANK_SIZE * TILE_SIZE / 2,
-                  y: enemy.y + TANK_SIZE * TILE_SIZE / 2,
+                  x: enemyX,
+                  y: enemyY,
                   type: randomType,
                   blinkTimer: 0,
                 };
@@ -531,6 +554,26 @@ export const tick = (state: GameState, deltaMs: number): GameState => {
         const dy = Math.abs(bullet.y - (newState.player.y + TANK_SIZE * TILE_SIZE / 2));
 
         if (dx < TANK_SIZE * TILE_SIZE && dy < TANK_SIZE * TILE_SIZE && newState.player.invincible <= 0) {
+          const playerX = newState.player.x + TANK_SIZE * TILE_SIZE / 2;
+          const playerY = newState.player.y + TANK_SIZE * TILE_SIZE / 2;
+
+          // Spawn hit particles
+          for (let p = 0; p < 6; p++) {
+            const angle = (p / 6) * Math.PI * 2;
+            const speed = 1.5 + Math.random() * 1.5;
+            newState.particles.push({
+              x: playerX,
+              y: playerY,
+              vx: Math.cos(angle) * speed,
+              vy: Math.sin(angle) * speed,
+              life: 300,
+              maxLife: 300,
+              color: "#ffff00",
+              size: 2 + Math.random() * 1.5,
+            });
+          }
+
+          newState.shakeIntensity = 5;
           newState.player.health -= bullet.power * 50;
           if (newState.player.health <= 0) {
             newState.lives--;
@@ -592,6 +635,16 @@ export const tick = (state: GameState, deltaMs: number): GameState => {
     if (newState.enemyQueue.length === 0 && newState.enemies.length === 0) {
       newState.mode = "stageComplete";
       newState.stageTimer = 2000;
+    }
+  }
+
+  // Save hi-score to localStorage when entering gameOver
+  if (newState.mode === "gameOver" && state.mode !== "gameOver") {
+    if (newState.score > newState.hiScore) {
+      newState.hiScore = newState.score;
+      if (typeof window !== "undefined") {
+        localStorage.setItem("battle-city-hi-score", String(newState.score));
+      }
     }
   }
 
