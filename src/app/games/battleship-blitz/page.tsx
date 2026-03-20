@@ -459,6 +459,12 @@ export default function BattleshipBlitzPage() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
+      
+      // Prevent default browser scrolling for game controls
+      if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(key)) {
+        e.preventDefault();
+      }
+
       if (key === "arrowleft" || key === "a") {
         inputStateRef.current.left = true;
       } else if (key === "arrowright" || key === "d") {
