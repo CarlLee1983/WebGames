@@ -128,6 +128,15 @@ export const GAME_REGISTRY: GameDef[] = [
     color: "bg-teal-500",
     status: 'published',
   },
+  {
+    id: "battle-city",
+    title: "Battle City",
+    description: "Classic retro tank battle game. Destroy enemy tanks, collect power-ups, and defend your base!",
+    icon: "i-ph-tank-duotone",
+    href: "/games/battle-city",
+    color: "bg-red-600",
+    status: 'beta',
+  },
 ];
 
 export const getPublishedGames = () => GAME_REGISTRY.filter(g => g.status === 'published');
