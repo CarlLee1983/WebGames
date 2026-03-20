@@ -119,6 +119,15 @@ export const GAME_REGISTRY: GameDef[] = [
     color: "bg-red-500",
     status: 'planned',
   },
+  {
+    id: "city-builder",
+    title: "City Builder",
+    description: "規劃道路、興建住宅、接通電力，打造屬於你的繁榮城市！",
+    icon: "i-ph-buildings-duotone",
+    href: "/games/city-builder",
+    color: "bg-teal-500",
+    status: 'published',
+  },
 ];
 
 export const getPublishedGames = () => GAME_REGISTRY.filter(g => g.status === 'published');
