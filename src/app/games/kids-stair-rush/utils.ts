@@ -236,7 +236,7 @@ export function tick(state: GameState, deltaMs: number): GameState {
 
   // Y軸移動
   let newY = s.player.y;
-  let oldY = s.player.y;
+  const oldY = s.player.y;
 
   if (s.player.groundedPlatformId !== null) {
     // 跟隨著平台往上移動
@@ -482,10 +482,10 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: Player) {
   ctx.lineJoin = "round";
 
   // 手臂與腿的參數
-  let leftArmRot = isFalling ? -Math.PI * 0.8 : (isWalking ? (animFrame === 0 ? 0.3 : -0.3) : 0);
-  let rightArmRot = isFalling ? -Math.PI * 0.8 : (isWalking ? (animFrame === 0 ? -0.3 : 0.3) : 0);
-  let leftLegRot = isFalling ? -0.2 : (isWalking ? (animFrame === 0 ? -0.4 : 0.4) : 0);
-  let rightLegRot = isFalling ? 0.4 : (isWalking ? (animFrame === 0 ? 0.4 : -0.4) : 0);
+  const leftArmRot = isFalling ? -Math.PI * 0.8 : (isWalking ? (animFrame === 0 ? 0.3 : -0.3) : 0);
+  const rightArmRot = isFalling ? -Math.PI * 0.8 : (isWalking ? (animFrame === 0 ? -0.3 : 0.3) : 0);
+  const leftLegRot = isFalling ? -0.2 : (isWalking ? (animFrame === 0 ? -0.4 : 0.4) : 0);
+  const rightLegRot = isFalling ? 0.4 : (isWalking ? (animFrame === 0 ? 0.4 : -0.4) : 0);
 
   // 繪製背景側的手腳 (Left = 後方)
   ctx.lineWidth = 4;
