@@ -1,6 +1,6 @@
 // Battle City - Core game logic and state management
 import { TileType, getMap } from "./maps";
-import { createEnemyAI, updateEnemyAI } from "./ai";
+import { createEnemyAI, updateEnemyAI, type AIState } from "./ai";
 
 // Constants
 export const TILE_SIZE = 16;
@@ -71,7 +71,7 @@ export interface Particle {
 
 export interface EnemyAIState {
   id: string;
-  state: string;
+  state: AIState;
   stateTimer: number;
   targetDir: Direction;
   lastShotTime: number;
@@ -194,14 +194,17 @@ export const createInitialState = (): GameState => {
 
   const [playerX, playerY] = gridToPixels(map.playerSpawn.x, map.playerSpawn.y);
 
+  const hiScoreStr =
+    typeof window !== "undefined"
+      ? localStorage.getItem("battle-city-hi-score")
+      : null;
+
   return {
     mode: "menu",
     stage: 1,
     lives: 3,
     score: 0,
-    hiScore: localStorage.getItem("battle-city-hi-score")
-      ? parseInt(localStorage.getItem("battle-city-hi-score")!)
-      : 0,
+    hiScore: hiScoreStr ? parseInt(hiScoreStr) : 0,
     time: 0,
 
     mapGrid: map.grid,

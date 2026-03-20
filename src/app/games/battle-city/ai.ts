@@ -1,7 +1,7 @@
 // Battle City - Enemy AI logic
 import { Direction, Tank, GameState, TILE_SIZE, TANK_SIZE } from "./utils";
 
-type AIState = "moving" | "shooting" | "turning";
+export type AIState = "moving" | "shooting" | "turning";
 
 interface EnemyAI {
   id: string;
