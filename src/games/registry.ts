@@ -102,6 +102,15 @@ export const GAME_REGISTRY: GameDef[] = [
     status: 'published',
   },
   {
+    id: "fire-emblem",
+    title: "Fire Emblem",
+    description: "A compact tactics skirmish with movement ranges, terrain bonuses, enemy counterattacks, and a boss objective.",
+    icon: "i-ph-chess-knight-duotone",
+    href: "/games/fire-emblem",
+    color: "bg-rose-600",
+    status: 'published',
+  },
+  {
     id: "2048",
     title: "2048",
     description: "Join the numbers and get to the 2048 tile!",
