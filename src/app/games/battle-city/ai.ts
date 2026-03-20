@@ -87,10 +87,14 @@ export const updateEnemyAI = (
   let shouldShoot = false;
   let moveDir = tank.direction;
 
+  // Artillery tanks have different behavior - aim and shoot
+  const isArtillery = tank.type === "artillery";
+
   // State machine
-  if (newAI.stateTimer > 2000) {
-    // Change strategy every 2 seconds
-    newAI.state = Math.random() > 0.7 ? "shooting" : "moving";
+  const stateChangeInterval = isArtillery ? 3000 : 2000;
+  if (newAI.stateTimer > stateChangeInterval) {
+    // Change strategy
+    newAI.state = isArtillery || Math.random() > 0.6 ? "shooting" : "moving";
     newAI.stateTimer = 0;
 
     // 70% move towards base, 30% random
@@ -106,22 +110,36 @@ export const updateEnemyAI = (
     }
   }
 
-  // Try to move in target direction
-  if (canMoveInDirection(tank.x, tank.y, newAI.targetDir, gameState.mapGrid)) {
-    moveDir = newAI.targetDir;
+  // Artillery tanks shoot more often
+  if (isArtillery) {
+    if (newAI.lastShotTime > 500 && Math.random() > 0.6) {
+      shouldShoot = true;
+      newAI.lastShotTime = 0;
+    }
   } else {
-    // Hit obstacle - try random direction
-    const newDir = getRandomDirection();
-    if (canMoveInDirection(tank.x, tank.y, newDir, gameState.mapGrid)) {
-      moveDir = newDir;
-      newAI.targetDir = newDir;
+    // Regular tanks shoot less frequently
+    if (newAI.lastShotTime > 1000 && Math.random() > 0.7) {
+      shouldShoot = true;
+      newAI.lastShotTime = 0;
     }
   }
 
-  // Shooting logic - 30% chance every second
-  if (newAI.lastShotTime > 1000 && Math.random() > 0.7) {
-    shouldShoot = true;
-    newAI.lastShotTime = 0;
+  // Movement logic - artillery tanks are more defensive
+  if (isArtillery && newAI.state === "shooting") {
+    // Stay in place and shoot
+    moveDir = tank.direction;
+  } else {
+    // Try to move in target direction
+    if (canMoveInDirection(tank.x, tank.y, newAI.targetDir, gameState.mapGrid)) {
+      moveDir = newAI.targetDir;
+    } else {
+      // Hit obstacle - try random direction
+      const newDir = getRandomDirection();
+      if (canMoveInDirection(tank.x, tank.y, newDir, gameState.mapGrid)) {
+        moveDir = newDir;
+        newAI.targetDir = newDir;
+      }
+    }
   }
 
   return [newAI, moveDir, shouldShoot];

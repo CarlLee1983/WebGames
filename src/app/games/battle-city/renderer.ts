@@ -46,6 +46,7 @@ export const drawScene = (ctx: CanvasRenderingContext2D, state: GameState) => {
   drawEnemies(ctx, state);
   drawPlayer(ctx, state);
   drawBase(ctx, state);
+  drawPowerUp(ctx, state);
 
   // Draw sidebar
   drawSidebar(ctx, state);
@@ -119,14 +120,37 @@ const drawPlayer = (ctx: CanvasRenderingContext2D, state: GameState) => {
     ctx.globalAlpha = 0.5;
   }
 
-  drawTank(ctx, player.x, player.y, player.direction, COLORS.PLAYER_TANK, Math.min(3, Math.ceil(player.health / 33)));
+  drawTank(ctx, player.x, player.y, player.direction, COLORS.PLAYER_TANK, player.level || 1);
+
+  // Draw shield effect
+  if (player.shield) {
+    ctx.strokeStyle = "#00ff00";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(player.x + TANK_SIZE * TILE_SIZE / 2, player.y + TANK_SIZE * TILE_SIZE / 2, 20, 0, Math.PI * 2);
+    ctx.stroke();
+  }
 
   ctx.globalAlpha = 1;
 };
 
 const drawEnemies = (ctx: CanvasRenderingContext2D, state: GameState) => {
   for (const enemy of state.enemies) {
-    drawTank(ctx, enemy.x, enemy.y, enemy.direction, COLORS.ENEMY_TANK, 1);
+    let enemyColor = COLORS.ENEMY_TANK;
+    let enemyLevel = 1;
+
+    // Different colors for different enemy types
+    if (enemy.type === "fast") {
+      enemyColor = "#ff6600";
+    } else if (enemy.type === "armored") {
+      enemyColor = "#8888ff";
+      enemyLevel = 2;
+    } else if (enemy.type === "artillery") {
+      enemyColor = "#ff0088";
+      enemyLevel = 2;
+    }
+
+    drawTank(ctx, enemy.x, enemy.y, enemy.direction, enemyColor, enemyLevel);
   }
 };
 
@@ -145,7 +169,7 @@ const drawTank = (
   // Cannon
   const cannonX = x + size / 2;
   const cannonY = y + size / 2;
-  const cannonLength = 10;
+  const cannonLength = 10 + (level - 1) * 2;
 
   let cannonEndX = cannonX;
   let cannonEndY = cannonY;
@@ -191,12 +215,21 @@ const drawTank = (
       break;
   }
 
-  // Draw level stars
+  // Draw level indicators
   ctx.fillStyle = "#ffff00";
   for (let i = 0; i < level - 1; i++) {
     const starX = x + 4 + i * 6;
     const starY = y + 4;
     drawStar(ctx, starX, starY, 3);
+  }
+
+  // Draw level number for level 3
+  if (level === 3) {
+    ctx.fillStyle = "#ffff00";
+    ctx.font = "bold 8px monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("3", x + size / 2, y + size / 2);
   }
 };
 
@@ -220,6 +253,43 @@ const drawBullets = (ctx: CanvasRenderingContext2D, state: GameState) => {
     ctx.arc(bullet.x, bullet.y, 2, 0, Math.PI * 2);
     ctx.fill();
   }
+};
+
+const drawPowerUp = (ctx: CanvasRenderingContext2D, state: GameState) => {
+  if (!state.powerUp) return;
+
+  const x = state.powerUp.x;
+  const y = state.powerUp.y;
+  const blinking = Math.floor((state.powerUp.blinkTimer / 200) % 2) === 0;
+
+  if (!blinking) return;
+
+  const colors: Record<string, string> = {
+    tank: "#ffff00",
+    star: "#ff8800",
+    bomb: "#ff0000",
+    shield: "#00ff00",
+    clock: "#0088ff",
+    shovel: "#8800ff",
+  };
+
+  ctx.fillStyle = colors[state.powerUp.type] || "#ffffff";
+  ctx.fillRect(x - 8, y - 8, 16, 16);
+
+  // Draw icon letter
+  ctx.fillStyle = "#000000";
+  ctx.font = "bold 10px monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const letters: Record<string, string> = {
+    tank: "T",
+    star: "S",
+    bomb: "B",
+    shield: "H",
+    clock: "C",
+    shovel: "L",
+  };
+  ctx.fillText(letters[state.powerUp.type] || "?", x, y);
 };
 
 const drawParticles = (ctx: CanvasRenderingContext2D, state: GameState) => {

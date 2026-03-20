@@ -36,6 +36,8 @@ export interface Tank {
   bulletPower: number;
   invincible: number;
   type?: TankType;
+  level?: number;
+  shield?: boolean;
 }
 
 export interface Bullet {
@@ -503,6 +505,18 @@ export const tick = (state: GameState, deltaMs: number): GameState => {
               delete newState.enemyAIMap[enemy.id];
               newState.enemiesDefeated++;
               newState.score += 100;
+
+              // 30% chance to spawn power-up
+              if (Math.random() < 0.3 && !newState.powerUp) {
+                const powerUpTypes: PowerUpType[] = ["tank", "star", "bomb", "shield", "clock", "shovel"];
+                const randomType = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
+                newState.powerUp = {
+                  x: enemy.x + TANK_SIZE * TILE_SIZE / 2,
+                  y: enemy.y + TANK_SIZE * TILE_SIZE / 2,
+                  type: randomType,
+                  blinkTimer: 0,
+                };
+              }
             }
             hitTank = true;
             break;
@@ -533,6 +547,43 @@ export const tick = (state: GameState, deltaMs: number): GameState => {
       }
     }
     newState.bullets = bulletsAfterCollision;
+
+    // Update power-up blinking and collect
+    if (newState.powerUp) {
+      newState.powerUp.blinkTimer += deltaMs;
+      // Collect power-up if player touches it
+      const dx = Math.abs(newState.powerUp.x - (newState.player.x + TANK_SIZE * TILE_SIZE / 2));
+      const dy = Math.abs(newState.powerUp.y - (newState.player.y + TANK_SIZE * TILE_SIZE / 2));
+      if (dx < TANK_SIZE * TILE_SIZE && dy < TANK_SIZE * TILE_SIZE) {
+        newState = applyPowerUp(newState);
+      }
+    }
+
+    // Update frozen timer and apply frozen effect
+    newState.frozenTimer = Math.max(0, newState.frozenTimer - deltaMs);
+    if (newState.frozenTimer > 0) {
+      // Enemies can't move or shoot when frozen
+      newState.enemies = newState.enemies.map((e) => ({ ...e, speed: 0, shootCooldown: 1000 }));
+    }
+
+    // Update shovel timer for base protection
+    newState.shovelTimer = Math.max(0, newState.shovelTimer - deltaMs);
+    if (newState.shovelTimer > 0) {
+      // Base is protected
+      newState.baseDestroyed = false;
+    }
+
+    // Check base destruction (if enemy bullets hit base and no shovel protection)
+    for (const bullet of newState.bullets) {
+      if (!bullet.isPlayer && newState.shovelTimer <= 0) {
+        const bx = Math.abs(bullet.x - (newState.mapGrid[0].length / 2 * TILE_SIZE));
+        const by = Math.abs(bullet.y - (newState.mapGrid.length * TILE_SIZE));
+        if (bx < TILE_SIZE * 2 && by < TILE_SIZE * 2) {
+          newState.baseDestroyed = true;
+          newState.mode = "gameOver";
+        }
+      }
+    }
 
     // Check level complete
     if (newState.enemyQueue.length === 0 && newState.enemies.length === 0) {
@@ -573,6 +624,86 @@ export const shootBullet = (state: GameState): GameState => {
     bullets: [...state.bullets, newBullet],
     player: { ...state.player, shootCooldown: SHOOT_COOLDOWN },
   };
+};
+
+export const applyPowerUp = (state: GameState): GameState => {
+  if (!state.powerUp) return state;
+
+  const dx = Math.abs(state.powerUp.x - (state.player.x + TANK_SIZE * TILE_SIZE / 2));
+  const dy = Math.abs(state.powerUp.y - (state.player.y + TANK_SIZE * TILE_SIZE / 2));
+
+  if (dx > 32 || dy > 32) return state;
+
+  // Apply power-up effect
+  switch (state.powerUp.type) {
+    case "tank":
+      // Extra life
+      return {
+        ...state,
+        lives: state.lives + 1,
+        powerUp: null,
+        score: state.score + 500,
+      };
+
+    case "bomb":
+      // Kill all enemies
+      return {
+        ...state,
+        enemies: [],
+        powerUp: null,
+        score: state.score + 500,
+      };
+
+    case "clock":
+      // Freeze enemies
+      return {
+        ...state,
+        frozenTimer: 5000,
+        powerUp: null,
+        score: state.score + 500,
+      };
+
+    case "shovel":
+      // Protect base
+      return {
+        ...state,
+        shovelTimer: 5000,
+        powerUp: null,
+        score: state.score + 500,
+      };
+
+    case "star": {
+      // Upgrade tank level
+      const newLevel = Math.min(3, (state.player.level || 1) + 1);
+      const upgradedPlayer = { ...state.player, level: newLevel };
+      if (newLevel === 2) {
+        upgradedPlayer.speed = 3;
+        upgradedPlayer.bulletPower = 2;
+      } else if (newLevel === 3) {
+        upgradedPlayer.speed = 4;
+        upgradedPlayer.bulletPower = 3;
+      }
+      return {
+        ...state,
+        player: upgradedPlayer,
+        powerUp: null,
+        score: state.score + 500,
+      };
+    }
+
+    case "shield": {
+      // Shield effect
+      const shieldedPlayer = { ...state.player, shield: true };
+      return {
+        ...state,
+        player: shieldedPlayer,
+        powerUp: null,
+        score: state.score + 500,
+      };
+    }
+  }
+
+  return state;
 };
 
 export const restartGame = (): GameState => {
