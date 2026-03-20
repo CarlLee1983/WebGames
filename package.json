@@ -9,12 +9,14 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "matter-js": "^0.20.0",
     "next": "16.2.0",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
   "devDependencies": {
     "@iconify-json/ph": "^1.2.2",
+    "@types/matter-js": "^0.20.2",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

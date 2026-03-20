@@ -654,6 +654,8 @@ export default function FireEmblemPage() {
         event.preventDefault();
         if (stateRef.current.mode === "menu") {
           startBattleHandler();
+        } else if (stateRef.current.mode === "player") {
+          commitState(waitCurrentUnit(stateRef.current));
         } else if (stateRef.current.mode === "victory" || stateRef.current.mode === "defeat") {
           restartHandler();
         }
@@ -674,7 +676,7 @@ export default function FireEmblemPage() {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [resizeCanvas, restartHandler, startBattleHandler, toggleFullscreen]);
+  }, [commitState, resizeCanvas, restartHandler, startBattleHandler, toggleFullscreen]);
 
   useEffect(() => {
     window.render_game_to_text = () => renderGameToText(stateRef.current);

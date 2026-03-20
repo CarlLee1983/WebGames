@@ -146,6 +146,24 @@ export const GAME_REGISTRY: GameDef[] = [
     color: "bg-red-600",
     status: 'published',
   },
+  {
+    id: "ice-blocks",
+    title: "Ice Blocks",
+    description: "接住從天而降的冰塊，疊得越高分數越高！",
+    icon: "i-ph-ice-cream-duotone",
+    href: "/games/ice-blocks",
+    color: "bg-sky-400",
+    status: 'published',
+  },
+  {
+    id: "monopoly",
+    title: "Monopoly",
+    description: "經典大富翁遊戲！購買地產、收租金、與對手競爭！",
+    icon: "i-ph-house-duotone",
+    href: "/games/monopoly",
+    color: "bg-indigo-500",
+    status: 'published',
+  },
 ];
 
 export const getPublishedGames = () => GAME_REGISTRY.filter(g => g.status === 'published');
