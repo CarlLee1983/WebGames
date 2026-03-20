@@ -134,23 +134,20 @@ const getBulletVelocity = (dir: Direction, speed: number): [number, number] => {
   return [dx * speed, dy * speed];
 };
 
-// Collision detection
-const canTankMoveToGrid = (gridX: number, gridY: number, mapGrid: TileType[][]): boolean => {
-  if (
-    gridX < 0 ||
-    gridY < 0 ||
-    gridX + TANK_SIZE > mapGrid[0].length ||
-    gridY + TANK_SIZE > mapGrid.length
-  ) {
+const canMoveToPixels = (pixelX: number, pixelY: number, mapGrid: TileType[][]): boolean => {
+  const startGridX = Math.floor(pixelX / TILE_SIZE);
+  const endGridX = Math.floor((pixelX + TANK_SIZE * TILE_SIZE - 0.1) / TILE_SIZE);
+  const startGridY = Math.floor(pixelY / TILE_SIZE);
+  const endGridY = Math.floor((pixelY + TANK_SIZE * TILE_SIZE - 0.1) / TILE_SIZE);
+
+  if (startGridX < 0 || startGridY < 0 || endGridX >= mapGrid[0].length || endGridY >= mapGrid.length) {
     return false;
   }
 
-  for (let dy = 0; dy < TANK_SIZE; dy++) {
-    for (let dx = 0; dx < TANK_SIZE; dx++) {
-      const tile = mapGrid[gridY + dy]?.[gridX + dx];
-      if (tile === 2) return false; // Steel wall - impassable
-      if (tile === 1) return false; // Brick wall - impassable
-      if (tile === 4) return false; // Water - impassable
+  for (let gy = startGridY; gy <= endGridY; gy++) {
+    for (let gx = startGridX; gx <= endGridX; gx++) {
+      const tile = mapGrid[gy]?.[gx];
+      if (tile === 2 || tile === 1 || tile === 4) return false;
     }
   }
 
@@ -269,10 +266,10 @@ export const startGame = (state: GameState): GameState => {
     particles: [],
     player: {
       ...state.player,
-      x: gridToPixels(state.mapGrid[0].length / 2 - TANK_SIZE / 2, state.mapGrid.length - TANK_SIZE)[0],
+      x: gridToPixels(state.mapGrid[0].length / 2 - TANK_SIZE / 2 - 4, state.mapGrid.length - TANK_SIZE - 1)[0],
       y: gridToPixels(
-        state.mapGrid[0].length / 2 - TANK_SIZE / 2,
-        state.mapGrid.length - TANK_SIZE
+        state.mapGrid[0].length / 2 - TANK_SIZE / 2 - 4,
+        state.mapGrid.length - TANK_SIZE - 1
       )[1],
       health: state.player.maxHealth,
       invincible: PLAYER_INVINCIBLE_TIME,
@@ -310,12 +307,31 @@ export const tick = (state: GameState, deltaMs: number): GameState => {
     if (newState.playerInput !== "none") {
       newPlayer.direction = newState.playerInput;
       const [dx, dy] = getDirectionVector(newState.playerInput);
-      const newGridX = Math.round(newPlayer.x / TILE_SIZE);
-      const newGridY = Math.round(newPlayer.y / TILE_SIZE);
+      
+      let nextX = newPlayer.x + dx * newPlayer.speed;
+      let nextY = newPlayer.y + dy * newPlayer.speed;
 
-      if (canTankMoveToGrid(newGridX + dx, newGridY + dy, newState.mapGrid)) {
-        newPlayer.x += dx * newPlayer.speed;
-        newPlayer.y += dy * newPlayer.speed;
+      // Auto-align for smooth turning
+      if (dx !== 0) { // Moving horizontally
+        const alignY = Math.round(newPlayer.y / TILE_SIZE) * TILE_SIZE;
+        if (Math.abs(newPlayer.y - alignY) <= 8) {
+          nextY = alignY; // Snap
+        } else {
+          // Prevent moving if completely misaligned
+          nextX = newPlayer.x;
+        }
+      } else if (dy !== 0) { // Moving vertically
+        const alignX = Math.round(newPlayer.x / TILE_SIZE) * TILE_SIZE;
+        if (Math.abs(newPlayer.x - alignX) <= 8) {
+          nextX = alignX; // Snap
+        } else {
+          nextY = newPlayer.y;
+        }
+      }
+
+      if (canMoveToPixels(nextX, nextY, newState.mapGrid)) {
+        newPlayer.x = nextX;
+        newPlayer.y = nextY;
       }
     }
 
@@ -452,12 +468,23 @@ export const tick = (state: GameState, deltaMs: number): GameState => {
       // Move enemy
       newEnemy.direction = moveDir;
       const [dx, dy] = getDirectionVector(moveDir);
-      const newGridX = Math.round(newEnemy.x / TILE_SIZE);
-      const newGridY = Math.round(newEnemy.y / TILE_SIZE);
+      
+      let nextX = newEnemy.x + dx * newEnemy.speed;
+      let nextY = newEnemy.y + dy * newEnemy.speed;
 
-      if (canTankMoveToGrid(newGridX + dx, newGridY + dy, newState.mapGrid)) {
-        newEnemy.x += dx * newEnemy.speed;
-        newEnemy.y += dy * newEnemy.speed;
+      if (dx !== 0) {
+        const alignY = Math.round(newEnemy.y / TILE_SIZE) * TILE_SIZE;
+        if (Math.abs(newEnemy.y - alignY) <= 8) nextY = alignY;
+        else nextX = newEnemy.x;
+      } else if (dy !== 0) {
+        const alignX = Math.round(newEnemy.x / TILE_SIZE) * TILE_SIZE;
+        if (Math.abs(newEnemy.x - alignX) <= 8) nextX = alignX;
+        else nextY = newEnemy.y;
+      }
+
+      if (canMoveToPixels(nextX, nextY, newState.mapGrid)) {
+        newEnemy.x = nextX;
+        newEnemy.y = nextY;
       }
 
       // Clamp position
@@ -623,7 +650,7 @@ export const tick = (state: GameState, deltaMs: number): GameState => {
     for (const bullet of newState.bullets) {
       if (!bullet.isPlayer && newState.shovelTimer <= 0) {
         const bx = Math.abs(bullet.x - (newState.mapGrid[0].length / 2 * TILE_SIZE));
-        const by = Math.abs(bullet.y - (newState.mapGrid.length * TILE_SIZE));
+        const by = Math.abs(bullet.y - ((newState.mapGrid.length - 2) * TILE_SIZE));
         if (bx < TILE_SIZE * 2 && by < TILE_SIZE * 2) {
           newState.baseDestroyed = true;
           newState.mode = "gameOver";

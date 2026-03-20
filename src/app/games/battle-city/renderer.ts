@@ -315,13 +315,13 @@ const drawBase = (ctx: CanvasRenderingContext2D, state: GameState) => {
   if (state.baseDestroyed) {
     ctx.fillStyle = COLORS.BASE_DAMAGED;
     const x = 12 * TILE_SIZE;
-    const y = 24 * TILE_SIZE;
+    const y = 23 * TILE_SIZE;
     ctx.fillRect(x, y, TILE_SIZE * 2, TILE_SIZE * 2);
   } else {
     // Draw eagle icon
     ctx.fillStyle = COLORS.BASE;
     const x = 12 * TILE_SIZE;
-    const y = 24 * TILE_SIZE;
+    const y = 23 * TILE_SIZE;
     drawEagle(ctx, x + TILE_SIZE, y + TILE_SIZE);
   }
 };

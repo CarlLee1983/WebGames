@@ -51,11 +51,12 @@ const LEVEL_1: GameMap = {
     // Row 22-24
     [2, 1, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 1, 2],
     [2, 1, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 1, 2],
+    [2, 1, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 1, 2],
     // Row 25: Bottom border
     [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2],
   ],
-  playerSpawn: { x: 1, y: 24 }, // Bottom-left (grid coords)
-  basePosition: { x: 12, y: 24 }, // Bottom-center (grid coords)
+  playerSpawn: { x: 1, y: 23 }, // Bottom-left (grid coords)
+  basePosition: { x: 12, y: 23 }, // Bottom-center (grid coords)
   enemySpawns: [
     { x: 12, y: 1 }, // Top-center
     { x: 1, y: 1 }, // Top-left
