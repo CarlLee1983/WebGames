@@ -55,6 +55,8 @@ export const drawScene = (ctx: CanvasRenderingContext2D, state: GameState) => {
     drawMenuOverlay(ctx);
   } else if (state.mode === "stageStart") {
     drawStageStartOverlay(ctx, state);
+  } else if (state.mode === "stageComplete") {
+    drawStageCompleteOverlay(ctx, state);
   } else if (state.mode === "paused") {
     drawPausedOverlay(ctx);
   } else if (state.mode === "gameOver") {
@@ -212,8 +214,8 @@ const drawStar = (ctx: CanvasRenderingContext2D, x: number, y: number, size: num
 };
 
 const drawBullets = (ctx: CanvasRenderingContext2D, state: GameState) => {
-  ctx.fillStyle = COLORS.BULLET;
   for (const bullet of state.bullets) {
+    ctx.fillStyle = bullet.isPlayer ? COLORS.BULLET : "#ff6666";
     ctx.beginPath();
     ctx.arc(bullet.x, bullet.y, 2, 0, Math.PI * 2);
     ctx.fill();
@@ -336,6 +338,21 @@ const drawPausedOverlay = (ctx: CanvasRenderingContext2D) => {
   ctx.font = "bold 24px monospace";
   ctx.textAlign = "center";
   ctx.fillText("PAUSED", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+};
+
+const drawStageCompleteOverlay = (ctx: CanvasRenderingContext2D, state: GameState) => {
+  const opacity = 1 - state.stageTimer / 2000;
+  ctx.fillStyle = `rgba(0, 0, 0, ${0.7 * opacity})`;
+  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+  ctx.globalAlpha = opacity;
+  ctx.fillStyle = COLORS.TEXT;
+  ctx.font = "bold 24px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("STAGE COMPLETE", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 20);
+  ctx.font = "16px monospace";
+  ctx.fillText(`Score: ${state.score}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 20);
+  ctx.globalAlpha = 1;
 };
 
 const drawGameOverOverlay = (ctx: CanvasRenderingContext2D) => {

@@ -14,6 +14,7 @@ import {
   startGame,
   restartGame,
 } from "./utils";
+import { getMap } from "./maps";
 import { drawScene } from "./renderer";
 
 export default function BattleCityPage() {
@@ -69,6 +70,20 @@ export default function BattleCityPage() {
             stateRef.current = restartGame();
             lastTimeRef.current = 0;
             stateRef.current = startGame(stateRef.current);
+          } else if (stateRef.current.mode === "stageComplete") {
+            const nextStage = stateRef.current.stage + 1;
+            const map = getMap(nextStage);
+            stateRef.current = {
+              ...stateRef.current,
+              stage: nextStage,
+              mapGrid: map.grid,
+              brickHealth: map.grid.map((row) => row.map((tile) => (tile === 1 ? 1 : 0))),
+              baseDestroyed: false,
+              enemyQueue: ["basic", "basic", "fast", "basic", "armored", "basic", "basic", "fast"],
+              enemiesDefeated: 0,
+            };
+            stateRef.current = startGame(stateRef.current);
+            lastTimeRef.current = 0;
           } else if (stateRef.current.mode === "playing" || stateRef.current.mode === "paused") {
             stateRef.current = togglePause(stateRef.current);
           }

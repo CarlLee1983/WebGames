@@ -1,5 +1,6 @@
 // Battle City - Core game logic and state management
 import { TileType, getMap } from "./maps";
+import { createEnemyAI, updateEnemyAI } from "./ai";
 
 // Constants
 export const TILE_SIZE = 16;
@@ -66,6 +67,14 @@ export interface Particle {
   size: number;
 }
 
+export interface EnemyAIState {
+  id: string;
+  state: string;
+  stateTimer: number;
+  targetDir: Direction;
+  lastShotTime: number;
+}
+
 export interface GameState {
   mode: GameMode;
   stage: number;
@@ -86,12 +95,14 @@ export interface GameState {
 
   enemyQueue: TankType[];
   enemySpawnTimer: number;
+  enemyAIMap: Record<string, EnemyAIState>;
   frozenTimer: number;
   shovelTimer: number;
 
   stageTimer: number;
   shakeIntensity: number;
   playerInput: Direction | "none";
+  enemiesDefeated: number;
 }
 
 // Helper functions
@@ -216,12 +227,14 @@ export const createInitialState = (): GameState => {
 
     enemyQueue: ["basic", "basic", "fast", "basic", "armored", "basic", "basic", "fast"],
     enemySpawnTimer: 0,
+    enemyAIMap: {},
     frozenTimer: 0,
     shovelTimer: 0,
 
     stageTimer: 0,
     shakeIntensity: 0,
     playerInput: "none",
+    enemiesDefeated: 0,
   };
 };
 
@@ -379,6 +392,153 @@ export const tick = (state: GameState, deltaMs: number): GameState => {
         life: p.life - deltaMs,
       }))
       .filter((p) => p.life > 0);
+
+    // Spawn enemies
+    newState.enemySpawnTimer -= deltaMs;
+    const maxEnemies = 4;
+    if (newState.enemySpawnTimer <= 0 && newState.enemies.length < maxEnemies && newState.enemyQueue.length > 0) {
+      const spawnPoints = [
+        { x: 0, y: 0 },
+        { x: 12, y: 0 },
+        { x: 24, y: 0 },
+      ];
+      const spawnPoint = spawnPoints[Math.floor(Math.random() * spawnPoints.length)];
+      const [spawnX, spawnY] = gridToPixels(spawnPoint.x, spawnPoint.y);
+
+      const enemyType = newState.enemyQueue.shift()!;
+      const enemySpeed = enemyType === "fast" ? 3 : 2;
+      const newEnemy: Tank = {
+        id: `enemy-${Date.now()}-${Math.random()}`,
+        x: spawnX,
+        y: spawnY,
+        direction: "DOWN",
+        speed: enemySpeed,
+        health: enemyType === "armored" ? 200 : 100,
+        maxHealth: enemyType === "armored" ? 200 : 100,
+        shootCooldown: 0,
+        bulletPower: 1,
+        invincible: 500,
+        type: enemyType as TankType,
+      };
+
+      newState.enemies.push(newEnemy);
+      newState.enemyAIMap[newEnemy.id] = createEnemyAI(newEnemy.id);
+      newState.enemySpawnTimer = 2000;
+    }
+
+    // Update enemies
+    const newEnemies: Tank[] = [];
+    for (let i = 0; i < newState.enemies.length; i++) {
+      const enemy = newState.enemies[i];
+      const newEnemy = { ...enemy };
+
+      // Get AI decision
+      const [updatedAI, moveDir, shouldShoot] = updateEnemyAI(
+        newState.enemyAIMap[enemy.id],
+        enemy,
+        newState,
+        deltaMs
+      );
+      newState.enemyAIMap[enemy.id] = updatedAI;
+
+      // Move enemy
+      newEnemy.direction = moveDir;
+      const [dx, dy] = getDirectionVector(moveDir);
+      const newGridX = Math.round(newEnemy.x / TILE_SIZE);
+      const newGridY = Math.round(newEnemy.y / TILE_SIZE);
+
+      if (canTankMoveToGrid(newGridX + dx, newGridY + dy, newState.mapGrid)) {
+        newEnemy.x += dx * newEnemy.speed;
+        newEnemy.y += dy * newEnemy.speed;
+      }
+
+      // Clamp position
+      newEnemy.x = Math.max(0, Math.min(newEnemy.x, GAME_AREA_WIDTH - TANK_SIZE * TILE_SIZE));
+      newEnemy.y = Math.max(0, Math.min(newEnemy.y, GAME_AREA_HEIGHT - TANK_SIZE * TILE_SIZE));
+
+      // Update invincibility and shoot cooldown
+      newEnemy.invincible = Math.max(0, newEnemy.invincible - deltaMs);
+      newEnemy.shootCooldown = Math.max(0, newEnemy.shootCooldown - deltaMs);
+
+      // Enemy shooting
+      if (shouldShoot && newEnemy.shootCooldown <= 0) {
+        const [vx, vy] = getBulletVelocity(moveDir, BULLET_SPEED);
+        const bulletX = newEnemy.x + (TANK_SIZE * TILE_SIZE) / 2;
+        const bulletY = newEnemy.y + (TANK_SIZE * TILE_SIZE) / 2;
+
+        newState.bullets.push({
+          id: `enemy-bullet-${Date.now()}-${Math.random()}`,
+          x: bulletX,
+          y: bulletY,
+          vx,
+          vy,
+          ownerId: newEnemy.id,
+          isPlayer: false,
+          power: newEnemy.bulletPower,
+        });
+
+        newEnemy.shootCooldown = SHOOT_COOLDOWN;
+      }
+
+      newEnemies.push(newEnemy);
+    }
+    newState.enemies = newEnemies;
+
+    // Check bullet-tank collisions
+    const bulletsAfterCollision: Bullet[] = [];
+    for (const bullet of newState.bullets) {
+      let hitTank = false;
+
+      if (bullet.isPlayer) {
+        // Player bullet - check enemy collision
+        for (let i = 0; i < newState.enemies.length; i++) {
+          const enemy = newState.enemies[i];
+          const dx = Math.abs(bullet.x - (enemy.x + TANK_SIZE * TILE_SIZE / 2));
+          const dy = Math.abs(bullet.y - (enemy.y + TANK_SIZE * TILE_SIZE / 2));
+
+          if (dx < TANK_SIZE * TILE_SIZE && dy < TANK_SIZE * TILE_SIZE) {
+            enemy.health -= bullet.power * 50;
+            if (enemy.health <= 0) {
+              newState.enemies.splice(i, 1);
+              delete newState.enemyAIMap[enemy.id];
+              newState.enemiesDefeated++;
+              newState.score += 100;
+            }
+            hitTank = true;
+            break;
+          }
+        }
+      } else {
+        // Enemy bullet - check player collision
+        const dx = Math.abs(bullet.x - (newState.player.x + TANK_SIZE * TILE_SIZE / 2));
+        const dy = Math.abs(bullet.y - (newState.player.y + TANK_SIZE * TILE_SIZE / 2));
+
+        if (dx < TANK_SIZE * TILE_SIZE && dy < TANK_SIZE * TILE_SIZE && newState.player.invincible <= 0) {
+          newState.player.health -= bullet.power * 50;
+          if (newState.player.health <= 0) {
+            newState.lives--;
+            if (newState.lives <= 0) {
+              newState.mode = "gameOver";
+            } else {
+              newState.player.health = newState.player.maxHealth;
+              newState.player.invincible = PLAYER_INVINCIBLE_TIME;
+            }
+          }
+          hitTank = true;
+        }
+      }
+
+      if (!hitTank) {
+        bulletsAfterCollision.push(bullet);
+      }
+    }
+    newState.bullets = bulletsAfterCollision;
+
+    // Check level complete
+    if (newState.enemyQueue.length === 0 && newState.enemies.length === 0) {
+      newState.mode = "stageComplete";
+      newState.stageTimer = 2000;
+    }
   }
 
   return newState;
