@@ -71,10 +71,10 @@ export interface GameState {
 // Game constants
 const PLAYER_WIDTH = 16;
 const PLAYER_HEIGHT = 16;
-const PLAYER_SPEED = 120;
-const PLAYER_SHOOT_COOLDOWN = 6;
-const ENEMY_BULLET_SPEED = 60;
-const PLAYER_BULLET_SPEED = 150;
+const PLAYER_SPEED = 200;
+const PLAYER_SHOOT_COOLDOWN = 0.15;
+const ENEMY_BULLET_SPEED = 120;
+const PLAYER_BULLET_SPEED = 400;
 
 export function createInitialState(): GameState {
   return {
@@ -163,7 +163,7 @@ export function updateGameState(
     };
   }
 
-  let newState = { ...state, time: state.time + deltaTime };
+  const newState = { ...state, time: state.time + deltaTime };
 
   // Update player position with touch or keyboard
   const moveDistance = PLAYER_SPEED * deltaTime;
@@ -186,11 +186,11 @@ export function updateGameState(
   }
 
   // Update invulnerability
-  let invulnerable = Math.max(0, newState.player.invulnerable - deltaTime);
+  const invulnerable = Math.max(0, newState.player.invulnerable - deltaTime);
 
   // Update shoot cooldown and handle shooting
   let shootCooldown = Math.max(0, newState.player.shootCooldown - deltaTime);
-  let playerBullets = [...newState.playerBullets];
+  const playerBullets = [...newState.playerBullets];
 
   if (input.shoot && shootCooldown <= 0) {
     const bulletX = newPlayerX + PLAYER_WIDTH / 2;
@@ -305,9 +305,9 @@ export function updateGameState(
   }
 
   // Update enemies and enemy bullets
-  let enemyBullets = [...newState.enemyBullets];
+  const enemyBullets = [...newState.enemyBullets];
   enemies = enemies.map((enemy) => {
-    let newEnemy = {
+    const newEnemy = {
       ...enemy,
       y: enemy.y + enemy.vy * deltaTime,
       shootCooldown: Math.max(0, enemy.shootCooldown - deltaTime),
