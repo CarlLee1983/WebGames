@@ -253,9 +253,25 @@ export default function WhackAMolePage() {
         {/* Play Area */}
         <div 
           className={`relative h-[600px] w-full bg-lime-500 overflow-hidden select-none ${isFullscreen ? 'aspect-[2/3] max-h-full h-auto shadow-2xl rounded-2xl border-4 border-lime-700' : ''}`}
-          style={{ backgroundImage: 'radial-gradient(circle, #84cc16 20%, #65a30d 100%)' }}
+          style={{ 
+            backgroundImage: 'radial-gradient(circle, #84cc16 20%, #65a30d 100%)',
+            cursor: gameState === 'playing' ? `url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM0NTFiMDUiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTQuNSAzTDkgOC41bC00LjIzLTQuMjNhMiAyIDAgMCAwLTIuODMgMi44M2w0LjI0IDQuMjRMMiAxNWwuNSAuNWwyIDIgMi0yIDEuNSA0LjVMMTIuNSAyMmwuNS0uNWwxLjUtMS41IDQuMjQgNC4yNGEyIDIgMCAwIDAgMi44My0yLjgzTDE3LjA3IDE3TDIxIDEyLjVsLTEuNS00LjVMMTcgOS41bDQuMjQtNC4yNGEyIDIgMCAwIDAtMi44My0yLjgzTDE0LjUgM3oiLz48L3N2Zz4iKSAxNiAxNiwgYXV0bw==` : 'default'
+          }}
         >
-          {/* Decorative Grass/Dirt could go here */}
+          {/* Environment Decorations (Grass tufts) */}
+          <div className="absolute inset-0 opacity-20 pointer-events-none">
+             {[...Array(15)].map((_, i) => (
+               <div 
+                 key={i} 
+                 className="absolute w-2 h-4 bg-lime-900 rounded-full"
+                 style={{ 
+                   left: `${(i * 137) % 100}%`, 
+                   top: `${(i * 197) % 100}%`,
+                   transform: `rotate(${(i * 45) % 360}deg)` 
+                 }}
+               />
+             ))}
+          </div>
 
           {gameState === "playing" && holes.map(hole => {
             const mole = moles[hole.id] || { status: "hiding" };
@@ -276,52 +292,87 @@ export default function WhackAMolePage() {
                 
                 {/* Mole */}
                 <div 
-                  className={`absolute bottom-4 w-full h-[70px] cursor-pointer transition-transform duration-150 ease-out origin-bottom ${
+                  className={`absolute bottom-4 w-full h-[75px] cursor-pointer transition-transform duration-150 ease-out origin-bottom ${
                     mole.status === "hiding" ? "translate-y-[100%] scale-0 opacity-0" : 
                     mole.status === "up" ? "translate-y-0 scale-100 opacity-100" :
-                    mole.status === "hit" ? "translate-y-2 scale-95 opacity-100" :
-                    mole.status === "escaped" ? "translate-y-0 scale-100 opacity-100" : ""
+                    mole.status === "hit" ? "translate-y-3 scale-95 opacity-100 rotate-3" :
+                    mole.status === "escaped" ? "translate-y-0 scale-100 opacity-100 -translate-x-1" : ""
                   }`}
                   onPointerDown={() => handleWhack(hole.id)}
                 >
                   <div className="relative w-full h-full">
-                    {/* Mole Body */}
-                    <div className="absolute inset-0 bg-amber-700 rounded-t-[40px] border-2 border-amber-900" />
+                    {/* Mole Body with Texture/Gradient */}
+                    <div className="absolute inset-0 bg-amber-800 rounded-t-[40px] border-b-0 border-x-4 border-t-4 border-amber-950 overflow-hidden">
+                      {/* Belly Patch */}
+                      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-4/5 h-3/5 bg-amber-200/20 rounded-t-full blur-sm" />
+                    </div>
                     
-                    {/* Face / Expressions */}
-                    <div className="absolute top-2 left-0 right-0 flex flex-col items-center">
-                      {mole.status === "up" && (
-                        <>
-                          <div className="flex gap-2 mb-1">
-                            <div className="w-2 h-2 rounded-full bg-black" />
-                            <div className="w-2 h-2 rounded-full bg-black" />
-                          </div>
-                          <div className="w-3 h-2 rounded-full bg-pink-300" />
-                        </>
-                      )}
-                      {mole.status === "hit" && (
-                        <>
-                           <div className="text-xl leading-none">😵</div>
-                        </>
-                      )}
+                    {/* Face / Expressions (SVG/CSS drawn) */}
+                    <div className="absolute top-3 left-0 right-0 flex flex-col items-center">
+                      {/* Eyes Container */}
+                      <div className="flex gap-4 mb-2">
+                        {mole.status === "up" && (
+                          <>
+                            <div className="w-2.5 h-2.5 rounded-full bg-black relative">
+                              <div className="absolute top-0.5 right-0.5 w-1 h-1 rounded-full bg-white opacity-80" />
+                            </div>
+                            <div className="w-2.5 h-2.5 rounded-full bg-black relative">
+                              <div className="absolute top-0.5 right-0.5 w-1 h-1 rounded-full bg-white opacity-80" />
+                            </div>
+                          </>
+                        )}
+                        {mole.status === "hit" && (
+                          <>
+                             {/* Spiral dizzy eyes */}
+                             <div className="w-3 h-3 border-2 border-black rounded-full flex items-center justify-center relative">
+                                <div className="w-full h-[1px] bg-black rotate-45" />
+                                <div className="w-full h-[1px] bg-black -rotate-45" />
+                             </div>
+                             <div className="w-3 h-3 border-2 border-black rounded-full flex items-center justify-center relative">
+                                <div className="w-full h-[1px] bg-black rotate-45" />
+                                <div className="w-full h-[1px] bg-black -rotate-45" />
+                             </div>
+                          </>
+                        )}
+                        {mole.status === "escaped" && (
+                          <>
+                             {/* Narrowed eyes/mocking */}
+                             <div className="w-3 h-1 bg-black rounded-full rotate-12" />
+                             <div className="w-3 h-1 bg-black rounded-full -rotate-12" />
+                          </>
+                        )}
+                      </div>
+                      
+                      {/* Nose & Snout */}
+                      <div className="w-4 h-3 bg-pink-400 rounded-full shadow-inner relative">
+                         <div className="absolute top-0.5 left-1 w-1 h-1 rounded-full bg-white opacity-40" />
+                      </div>
+
+                      {/* Mouth (only for escape) */}
                       {mole.status === "escaped" && (
-                        <>
-                           <div className="text-xl leading-none">😜</div>
-                        </>
+                        <div className="mt-1 w-4 h-3 border-b-2 border-pink-500 rounded-full" />
                       )}
                     </div>
 
-                    {/* Helmet */}
+                    {/* Helmet (Refined) */}
                     {mole.type === "helmet" && (
-                      <div className={`absolute -top-3 -left-1 -right-1 h-8 bg-yellow-400 rounded-t-full border-2 border-yellow-600 transition-all duration-200 ${mole.health === 1 ? '-translate-y-10 opacity-0 rotate-45' : ''}`}>
-                        <div className="absolute bottom-0 w-full h-2 bg-yellow-500" />
+                      <div className={`absolute -top-4 -left-1 -right-1 h-10 bg-gradient-to-b from-yellow-300 to-yellow-500 rounded-t-[30px] border-x-4 border-t-4 border-yellow-700 transition-all duration-300 z-10 ${mole.health === 1 ? '-translate-y-24 opacity-0 rotate-[60deg]' : ''}`}>
+                         {/* Helmet Rim */}
+                        <div className="absolute bottom-0 w-[110%] -left-[5%] h-3 bg-yellow-600 rounded-full border-2 border-yellow-800 shadow-md" />
+                        {/* Gloss Effect */}
+                        <div className="absolute top-1 left-2 w-1/3 h-1.5 bg-white/40 rounded-full" />
                       </div>
                     )}
                   </div>
                 </div>
 
-                {/* Front Grass Cover (to hide bottom of mole) */}
-                <div className="absolute bottom-[-10px] h-6 w-[120%] -left-[10%] rounded-[50%] bg-lime-600/80 blur-[2px]" />
+                {/* Front Grass Cover (Layered for depth) */}
+                <div className="absolute bottom-[-14px] h-8 w-[140%] -left-[20%] rounded-[50%] bg-lime-600 border-t-2 border-lime-700 shadow-md z-20 flex items-center justify-center">
+                    {/* Small grass tuft decoration */}
+                    <div className="w-1 h-3 bg-lime-400 rotate-12 rounded-t-full mb-4" />
+                    <div className="w-1 h-4 bg-lime-400 -rotate-6 rounded-t-full mb-3 mx-1" />
+                    <div className="w-1 h-2 bg-lime-400 rotate-[30deg] rounded-t-full mb-4" />
+                </div>
               </div>
             );
           })}

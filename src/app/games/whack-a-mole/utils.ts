@@ -1,21 +1,21 @@
-export const HOLE_COUNT = 7;
+export const HOLE_COUNT = 9; // 增加洞穴數量讓隨機感更強
 export const PLAY_AREA_SIZE = 100; // Percentage
 
-export const BASE_SPAWN_RATE = 1500; // ms
-export const BASE_UP_TIME = 2000; // ms
-export const HELMET_MOLE_CHANCE = 0.1;
+export const BASE_SPAWN_RATE = 1200; // 縮短生成間隔 (從 1500 -> 1200ms)
+export const BASE_UP_TIME = 1500;    // 縮短地鼠停留時間 (從 2000 -> 1500ms)
+export const HELMET_MOLE_CHANCE = 0.15; // 提高鋼盔地鼠基礎機率
 
 export const LEVEL_GOALS = [
-  150,  // Level 1
-  350,  // Level 2
-  600,  // Level 3
-  900,  // Level 4
-  1300, // Level 5
-  1800, // Level 6
-  2400, // Level 7
-  3100, // Level 8
-  3900, // Level 9
-  5000  // Level 10
+  300,  // Level 1 (之前是 150)
+  600,  // Level 2
+  1000, // Level 3
+  1500, // Level 4
+  2200, // Level 5
+  3000, // Level 6
+  4000, // Level 7
+  5200, // Level 8
+  6600, // Level 9
+  8500  // Level 10
 ];
 
 export type MoleType = "normal" | "helmet";
@@ -31,8 +31,8 @@ export interface MoleState {
 
 export function generateRandomHoles() {
   const holes: { id: number; x: number; y: number }[] = [];
-  const minDistance = 25; // Minimum percentage distance between holes
-  const margin = 15; // Margin from edges
+  const minDistance = 22; // 稍微縮減間距以容納更多洞穴
+  const margin = 12; // 邊緣留白縮小，增加活動範圍
 
   for (let i = 0; i < HOLE_COUNT; i++) {
     let x, y, valid;
