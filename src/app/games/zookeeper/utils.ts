@@ -365,6 +365,14 @@ export function extendSelection(state: GameState, point: Point): GameState {
     return state;
   }
 
+  const lastIndex = state.selectedPath.length - 1;
+  if (lastIndex >= 1 && isSamePoint(state.selectedPath[lastIndex - 1], point)) {
+    return {
+      ...state,
+      selectedPath: state.selectedPath.slice(0, lastIndex),
+    };
+  }
+
   if (state.selectedPath.some((entry) => isSamePoint(entry, point))) {
     return state;
   }

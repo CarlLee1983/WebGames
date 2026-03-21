@@ -304,7 +304,7 @@ function drawScene(ctx: CanvasRenderingContext2D, state: GameState) {
   ctx.fillText("Zookeeper", 34, 54);
   ctx.fillStyle = "#475569";
   ctx.font = "500 13px var(--font-geist-sans), sans-serif";
-  ctx.fillText("Drag across adjacent matching animals. Reach the target before the zoo crowd loses interest.", 34, 76);
+  ctx.fillText("Tap or drag across adjacent matching animals. Clear 3+ to score.", 34, 76);
 
   fillRoundedRect(ctx, 34, 96, CANVAS_WIDTH - 68, 58, 22, "#082f49");
   const progressTrackWidth = CANVAS_WIDTH - 196;
@@ -401,13 +401,13 @@ function drawScene(ctx: CanvasRenderingContext2D, state: GameState) {
 }
 
 function getCanvasPoint(
-  event: PointerEvent,
+  event: PointerEvent | MouseEvent | Touch,
   canvas: HTMLCanvasElement,
 ): { x: number; y: number } {
   const rect = canvas.getBoundingClientRect();
   return {
-    x: ((event.clientX - rect.left) / rect.width) * CANVAS_WIDTH,
-    y: ((event.clientY - rect.top) / rect.height) * CANVAS_HEIGHT,
+    x: (("clientX" in event ? event.clientX - rect.left : 0) / rect.width) * CANVAS_WIDTH,
+    y: (("clientY" in event ? event.clientY - rect.top : 0) / rect.height) * CANVAS_HEIGHT,
   };
 }
 
@@ -563,6 +563,10 @@ export default function ZookeeperPage() {
     }
 
     const handlePointerDown = (event: PointerEvent) => {
+      if (event.pointerType === "touch") {
+        event.preventDefault();
+      }
+
       if (stateRef.current.mode === "ready") {
         commitState(startGame(stateRef.current));
       }
@@ -579,6 +583,16 @@ export default function ZookeeperPage() {
 
       draggingRef.current = true;
       canvas.setPointerCapture?.(event.pointerId);
+
+      // Support tap-to-extend: if already has selection, try to extend first
+      if (stateRef.current.selectedPath.length > 0) {
+        const extended = extendSelection(stateRef.current, point);
+        if (extended !== stateRef.current) {
+          commitState(extended);
+          return;
+        }
+      }
+
       commitState(beginSelection(stateRef.current, point));
     };
 
@@ -602,8 +616,13 @@ export default function ZookeeperPage() {
       }
 
       draggingRef.current = false;
-      const result = resolveSelection(stateRef.current);
-      commitState(result.state);
+      
+      // Only resolve if we have a valid chain (length >= 3)
+      if (stateRef.current.selectedPath.length >= MIN_CHAIN_LENGTH) {
+        const result = resolveSelection(stateRef.current);
+        commitState(result.state);
+      }
+      // If chain is too short, we keep it selected to allow "tap to extend"
     };
 
     const cancelSelection = () => {
@@ -619,7 +638,6 @@ export default function ZookeeperPage() {
     canvas.addEventListener("pointermove", handlePointerMove);
     canvas.addEventListener("pointerup", finishSelection);
     canvas.addEventListener("pointercancel", cancelSelection);
-    canvas.addEventListener("pointerleave", handlePointerMove);
 
     return () => {
       canvas.removeEventListener("pointerdown", handlePointerDown);
@@ -683,14 +701,14 @@ export default function ZookeeperPage() {
           <header className="text-center">
             <h1 className="text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">Zookeeper</h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-600 sm:text-base">
-              A solo chain-match safari. Drag through matching neighbors, clear 3 or more, and race to 1500 points.
+              A solo chain-match safari. Tap or drag through matching neighbors, clear 3 or more, and race to 1500 points.
             </p>
           </header>
 
           <canvas
             id="zookeeper-canvas"
             ref={canvasRef}
-            className="w-full max-w-[560px] rounded-[32px] shadow-[0_24px_80px_rgba(15,23,42,0.18)] outline-none"
+            className="w-full max-w-[560px] rounded-[32px] shadow-[0_24px_80px_rgba(15,23,42,0.18)] outline-none touch-none"
             aria-label="Zookeeper game canvas"
           />
 
