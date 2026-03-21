@@ -172,7 +172,16 @@ export const GAME_REGISTRY: GameDef[] = [
     href: "/games/whack-a-mole",
     color: "bg-lime-600",
     status: 'published',
-  }
+  },
+  {
+    id: "deep-sea-penguin",
+    title: "Deep Sea Penguin",
+    description: "Dive into the deep sea! Dodge jellyfish and collect fish in this cute underwater adventure.",
+    icon: "i-ph-waves-duotone",
+    href: "/games/deep-sea-penguin",
+    color: "bg-blue-600",
+    status: 'published',
+  },
 ];
 
 export const getPublishedGames = () => GAME_REGISTRY.filter(g => g.status === 'published');
