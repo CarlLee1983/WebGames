@@ -13,9 +13,33 @@ export default function WhackAMolePage() {
   const [holes, setHoles] = useState<{ id: number; x: number; y: number }[]>([]);
   const [moles, setMoles] = useState<{ [id: number]: MoleState }>({});
   const [combo, setCombo] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const spawnerRef = useRef<NodeJS.Timeout | null>(null);
+  const gameContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!gameContainerRef.current) return;
+    
+    if (!document.fullscreenElement) {
+      gameContainerRef.current.requestFullscreen().catch((err: any) => {
+        console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+      });
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
+    }
+  };
 
   // Audio refs
   const hitSoundRef = useRef<HTMLAudioElement | null>(null);
@@ -194,11 +218,22 @@ export default function WhackAMolePage() {
             Whack-A-Mole
           </h1>
         </div>
+        <button
+          onClick={toggleFullscreen}
+          className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-bold text-gray-700 shadow-sm border border-gray-200 hover:bg-gray-50 active:scale-95 transition-all"
+          title="Toggle Fullscreen"
+        >
+          <div className={isFullscreen ? "i-ph-corners-in-bold" : "i-ph-corners-out-bold"} />
+          {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+        </button>
       </div>
 
-      <div className="relative mx-auto max-w-[600px] overflow-hidden rounded-2xl bg-sky-200 shadow-xl border-4 border-lime-700">
+      <div 
+        ref={gameContainerRef}
+        className={`relative mx-auto max-w-[600px] overflow-hidden rounded-2xl bg-sky-200 shadow-xl border-4 border-lime-700 ${isFullscreen ? 'w-screen h-screen max-w-none rounded-none border-0 flex items-center justify-center bg-sky-300' : ''}`}
+      >
         {/* Game UI Header */}
-        <div className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between bg-black/30 px-4 py-2 text-white backdrop-blur-sm">
+        <div className={`absolute left-0 right-0 top-0 z-10 flex items-center justify-between bg-black/30 px-4 py-2 text-white backdrop-blur-sm ${isFullscreen ? 'top-2 mx-4 rounded-full' : ''}`}>
           <div className="flex gap-4">
             <div className="font-bold text-xl drop-shadow-md">Level {level}</div>
             <div className="font-bold text-xl drop-shadow-md">Score: {score} / {LEVEL_GOALS[level-1] || '???'}</div>
@@ -210,14 +245,14 @@ export default function WhackAMolePage() {
 
         {/* Combo Counter */}
         {combo > 1 && gameState === "playing" && (
-          <div className="absolute right-4 top-14 z-10 text-2xl font-black text-yellow-400 italic drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] animate-bounce">
+          <div className={`absolute right-4 top-14 z-10 text-2xl font-black text-yellow-400 italic drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] animate-bounce ${isFullscreen ? 'top-16' : ''}`}>
             {combo}x Combo!
           </div>
         )}
 
         {/* Play Area */}
         <div 
-          className="relative h-[600px] w-full bg-lime-500 overflow-hidden select-none"
+          className={`relative h-[600px] w-full bg-lime-500 overflow-hidden select-none ${isFullscreen ? 'aspect-[2/3] max-h-full h-auto shadow-2xl rounded-2xl border-4 border-lime-700' : ''}`}
           style={{ backgroundImage: 'radial-gradient(circle, #84cc16 20%, #65a30d 100%)' }}
         >
           {/* Decorative Grass/Dirt could go here */}
