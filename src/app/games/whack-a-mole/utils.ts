@@ -6,16 +6,16 @@ export const BASE_UP_TIME = 1500;    // 縮短地鼠停留時間 (從 2000 -> 15
 export const HELMET_MOLE_CHANCE = 0.15; // 提高鋼盔地鼠基礎機率
 
 export const LEVEL_GOALS = [
-  300,  // Level 1 (之前是 150)
-  600,  // Level 2
-  1000, // Level 3
-  1500, // Level 4
-  2200, // Level 5
-  3000, // Level 6
-  4000, // Level 7
-  5200, // Level 8
-  6600, // Level 9
-  8500  // Level 10
+  800,   // Level 1 (之前是 300) - 需更多命中數來暖身
+  1800,  // Level 2 (之前是 600)
+  3200,  // Level 3 (之前是 1000)
+  5000,  // Level 4 (之前是 1500)
+  7500,  // Level 5 (之前是 2200) - 難度開始大幅躍升
+  10500, // Level 6
+  14000, // Level 7
+  18500, // Level 8
+  24000, // Level 9
+  30000  // Level 10 - 終極挑戰
 ];
 
 export type MoleType = "normal" | "helmet";

@@ -63,7 +63,7 @@ export default function WhackAMolePage() {
     setGameState("intro");
     setTimeout(() => {
       setGameState("playing");
-      setTimeLeft(30);
+      setTimeLeft(60);
       setCombo(0);
       setHoles(generateRandomHoles());
       setMoles({});
@@ -182,6 +182,7 @@ export default function WhackAMolePage() {
           return newScore;
         });
 
+        setTimeLeft(t => Math.min(99, t + 0.1));
         setCombo(c => c + 1);
         
         const hitMole = { ...mole, status: "hit" as const };
