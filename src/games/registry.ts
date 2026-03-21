@@ -164,6 +164,15 @@ export const GAME_REGISTRY: GameDef[] = [
     color: "bg-indigo-500",
     status: 'published',
   },
+  {
+    id: "whack-a-mole",
+    title: "Whack-A-Mole",
+    description: "經典童趣打地鼠！考驗反應速度，注意戴著鋼盔的狡猾地鼠！",
+    icon: "i-ph-hammer-duotone",
+    href: "/games/whack-a-mole",
+    color: "bg-lime-600",
+    status: 'published',
+  }
 ];
 
 export const getPublishedGames = () => GAME_REGISTRY.filter(g => g.status === 'published');
