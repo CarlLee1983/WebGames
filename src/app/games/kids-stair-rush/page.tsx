@@ -32,6 +32,69 @@ export default function KidsStairRushPage() {
   const leftPressed = useRef(false);
   const rightPressed = useRef(false);
 
+  const drawCurrentState = useCallback((state: GameState) => {
+    if (!canvasRef.current) return;
+
+    const ctx = canvasRef.current.getContext("2d");
+    if (ctx) {
+      drawScene(ctx, state);
+    }
+  }, []);
+
+  const applyDirectionalInput = useCallback(() => {
+    if (leftPressed.current && !rightPressed.current) {
+      stateRef.current = setPlayerInput(stateRef.current, "left");
+    } else if (rightPressed.current && !leftPressed.current) {
+      stateRef.current = setPlayerInput(stateRef.current, "right");
+    } else {
+      stateRef.current = setPlayerInput(stateRef.current, "none");
+    }
+  }, []);
+
+  const setDirectionPressed = useCallback((dir: "left" | "right", pressed: boolean) => {
+    if (dir === "left") {
+      leftPressed.current = pressed;
+    } else {
+      rightPressed.current = pressed;
+    }
+    applyDirectionalInput();
+  }, [applyDirectionalInput]);
+
+  const startOrResumeGame = useCallback(() => {
+    const state = stateRef.current;
+
+    if (state.mode === "ready") {
+      stateRef.current = startGame(state);
+      lastTimeRef.current = 0;
+      return;
+    }
+
+    if (state.mode === "gameOver") {
+      stateRef.current = startGame(restartGame());
+      lastTimeRef.current = 0;
+      return;
+    }
+
+    if (state.mode === "paused") {
+      stateRef.current = togglePause(state);
+      lastTimeRef.current = 0;
+    }
+  }, []);
+
+  const restartFromMobile = useCallback(() => {
+    stateRef.current = startGame(restartGame());
+    lastTimeRef.current = 0;
+  }, []);
+
+  const togglePauseFromMobile = useCallback(() => {
+    const state = stateRef.current;
+
+    if (state.mode === "playing" || state.mode === "paused") {
+      stateRef.current = togglePause(state);
+      lastTimeRef.current = 0;
+    }
+  }, []);
+
   // 遊戲迴圈
   const gameLoop = useCallback(() => {
     const now = performance.now();
@@ -46,13 +109,8 @@ export default function KidsStairRushPage() {
     stateRef.current = tick(stateRef.current, deltaMs);
 
     // 繪製畫面
-    if (canvasRef.current) {
-      const ctx = canvasRef.current.getContext("2d");
-      if (ctx) {
-        drawScene(ctx, stateRef.current);
-      }
-    }
-  }, []);
+    drawCurrentState(stateRef.current);
+  }, [drawCurrentState]);
 
   // rAF 迴圈
   useEffect(() => {
@@ -70,16 +128,6 @@ export default function KidsStairRushPage() {
 
   // 鍵盤事件
   useEffect(() => {
-    const updateInputState = () => {
-      if (leftPressed.current && !rightPressed.current) {
-        stateRef.current = setPlayerInput(stateRef.current, "left");
-      } else if (rightPressed.current && !leftPressed.current) {
-        stateRef.current = setPlayerInput(stateRef.current, "right");
-      } else {
-        stateRef.current = setPlayerInput(stateRef.current, "none");
-      }
-    };
-
     const handleKeyDown = (e: KeyboardEvent) => {
       const state = stateRef.current;
 
@@ -103,16 +151,14 @@ export default function KidsStairRushPage() {
         case "a":
         case "A":
           e.preventDefault();
-          leftPressed.current = true;
-          updateInputState();
+          setDirectionPressed("left", true);
           break;
 
         case "ArrowRight":
         case "d":
         case "D":
           e.preventDefault();
-          rightPressed.current = true;
-          updateInputState();
+          setDirectionPressed("right", true);
           break;
       }
     };
@@ -123,16 +169,14 @@ export default function KidsStairRushPage() {
         case "a":
         case "A":
           e.preventDefault();
-          leftPressed.current = false;
-          updateInputState();
+          setDirectionPressed("left", false);
           break;
 
         case "ArrowRight":
         case "d":
         case "D":
           e.preventDefault();
-          rightPressed.current = false;
-          updateInputState();
+          setDirectionPressed("right", false);
           break;
       }
     };
@@ -143,92 +187,109 @@ export default function KidsStairRushPage() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, []);
+  }, [setDirectionPressed]);
 
   // 觸控事件
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const handleTouchStart = (e: TouchEvent) => {
-      const touch = e.touches[0];
+    const getCanvasHalf = (clientX: number) => {
       const rect = canvas.getBoundingClientRect();
-      const x = touch.clientX - rect.left;
-
-      if (x < CANVAS_WIDTH / 2) {
-        leftPressed.current = true;
-      } else {
-        rightPressed.current = true;
-      }
-      
-      if (leftPressed.current && !rightPressed.current) {
-        stateRef.current = setPlayerInput(stateRef.current, "left");
-      } else if (rightPressed.current && !leftPressed.current) {
-        stateRef.current = setPlayerInput(stateRef.current, "right");
-      }
+      const x = clientX - rect.left;
+      return x < rect.width / 2 ? "left" : "right";
     };
 
-    const handleTouchEnd = (e: TouchEvent) => {
+    const handlePointerDown = (e: PointerEvent) => {
+      const state = stateRef.current;
+      e.preventDefault();
+
+      if (state.mode === "ready") {
+        startOrResumeGame();
+        return;
+      }
+
+      if (state.mode === "gameOver") {
+        restartFromMobile();
+        return;
+      }
+
+      if (state.mode === "paused") {
+        startOrResumeGame();
+        return;
+      }
+
+      const dir = getCanvasHalf(e.clientX);
+      setDirectionPressed(dir, true);
+    };
+
+    const clearPointerState = () => {
       leftPressed.current = false;
       rightPressed.current = false;
-      stateRef.current = setPlayerInput(stateRef.current, "none");
+      applyDirectionalInput();
     };
 
-    canvas.addEventListener("touchstart", handleTouchStart);
-    canvas.addEventListener("touchend", handleTouchEnd);
-    return () => {
-      canvas.removeEventListener("touchstart", handleTouchStart);
-      canvas.removeEventListener("touchend", handleTouchEnd);
+    const handlePointerUp = (e: PointerEvent) => {
+      e.preventDefault();
+      clearPointerState();
     };
-  }, []);
+
+    const handlePointerCancel = (e: PointerEvent) => {
+      e.preventDefault();
+      clearPointerState();
+    };
+
+    canvas.addEventListener("pointerdown", handlePointerDown);
+    canvas.addEventListener("pointerup", handlePointerUp);
+    canvas.addEventListener("pointercancel", handlePointerCancel);
+    return () => {
+      canvas.removeEventListener("pointerdown", handlePointerDown);
+      canvas.removeEventListener("pointerup", handlePointerUp);
+      canvas.removeEventListener("pointercancel", handlePointerCancel);
+    };
+  }, [applyDirectionalInput, restartFromMobile, setDirectionPressed, startOrResumeGame]);
 
   // Window hooks for testing
   useEffect(() => {
     window.render_game_to_text = () => renderGameToText(stateRef.current);
     window.advanceTime = (ms: number) => {
       stateRef.current = tick(stateRef.current, ms);
-
-      if (canvasRef.current) {
-        const ctx = canvasRef.current.getContext("2d");
-        if (ctx) {
-          drawScene(ctx, stateRef.current);
-        }
-      }
+      drawCurrentState(stateRef.current);
     };
 
     return () => {
       delete window.render_game_to_text;
       delete window.advanceTime;
     };
-  }, []);
+  }, [drawCurrentState]);
 
   return (
-    <div className="min-h-screen py-8 sm:py-12 bg-[#0A0A0A] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-gray-800 via-[#0A0A0A] to-black">
+    <div className="min-h-screen py-4 sm:py-8 bg-[#0A0A0A] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-gray-800 via-[#0A0A0A] to-black">
       <Container size="lg">
         {/* 標題 */}
-        <div className="mb-10 text-center">
-          <div className="inline-flex items-center justify-center gap-4 mb-3 px-6 py-2 rounded-full bg-white/5 border border-white/10 shadow-[0_0_15px_rgba(255,255,255,0.05)]">
-            <i className="i-ph-game-controller-duotone text-3xl text-yellow-400" />
-            <h1 className="text-4xl md:text-5xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-400">
+        <div className="mb-6 sm:mb-10 text-center px-1">
+          <div className="inline-flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-1 mb-3 px-4 py-2 rounded-full bg-white/5 border border-white/10 shadow-[0_0_15px_rgba(255,255,255,0.05)]">
+            <i className="i-ph-game-controller-duotone text-2xl sm:text-3xl text-yellow-400" />
+            <h1 className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-400">
               小朋友下樓梯
             </h1>
-            <span className="text-xl md:text-2xl font-bold text-gray-500 -ml-2">(NS-Shaft)</span>
+            <span className="text-sm sm:text-xl md:text-2xl font-bold text-gray-500">(NS-Shaft)</span>
           </div>
-          <p className="text-gray-400 text-lg md:text-xl font-medium tracking-wide drop-shadow-sm">
+          <p className="text-xs sm:text-lg md:text-xl font-medium tracking-[0.2em] text-gray-400 drop-shadow-sm">
             CLASSIC ARCADE SURVIVAL
           </p>
         </div>
 
         {/* 遊戲區域（大型機台風格） */}
-        <div className="flex justify-center mb-12">
-          <div className="relative group">
+        <div className="flex justify-center mb-6 sm:mb-12">
+          <div className="relative group w-full max-w-[min(100%,30rem)] sm:max-w-[34rem]">
             {/* 發光特效 */}
             <div className="absolute -inset-1 sm:-inset-1.5 bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 rounded-[32px] sm:rounded-[40px] opacity-30 group-hover:opacity-50 blur-xl transition duration-500" />
             
             {/* 機台外殼 */}
-            <div className="relative bg-gradient-to-b from-gray-900 to-[#121215] rounded-[24px] sm:rounded-[32px] p-4 sm:p-6 sm:pb-8 shadow-2xl border border-gray-700/50">
+            <div className="relative bg-gradient-to-b from-gray-900 to-[#121215] rounded-[24px] sm:rounded-[32px] p-3 sm:p-6 sm:pb-8 shadow-2xl border border-gray-700/50">
               {/* 頂部裝飾 */}
-              <div className="w-24 h-1.5 bg-gray-800 rounded-full mx-auto mb-4 border-b border-white/5" />
+              <div className="w-20 sm:w-24 h-1.5 bg-gray-800 rounded-full mx-auto mb-3 sm:mb-4 border-b border-white/5" />
               
               {/* 螢幕主體 */}
               <div className="relative overflow-hidden rounded-xl sm:rounded-2xl border-[4px] sm:border-[8px] border-black bg-black shadow-[inset_0_0_20px_rgba(255,255,255,0.05)]">
@@ -236,10 +297,10 @@ export default function KidsStairRushPage() {
                   ref={canvasRef}
                   width={CANVAS_WIDTH}
                   height={CANVAS_HEIGHT}
-                  className="block w-full max-w-full"
+                  className="block w-full max-w-full select-none touch-none"
                   style={{
                     boxShadow: '0 0 40px rgba(0,0,0,0.8)',
-                    imageRendering: 'pixelated', // 若想要有點復古感可加，或移除
+                    imageRendering: 'pixelated',
                   }}
                 />
                 {/* CRT 螢幕反光特效 */}
@@ -247,16 +308,89 @@ export default function KidsStairRushPage() {
               </div>
               
               {/* 底部投幣孔/裝飾 */}
-              <div className="mt-5 flex justify-center gap-6 opacity-30">
-                <div className="w-10 h-3 bg-red-500/50 rounded-full shadow-[0_0_10px_rgba(239,68,68,0.5)]" />
-                <div className="w-10 h-3 bg-red-500/50 rounded-full shadow-[0_0_10px_rgba(239,68,68,0.5)]" />
+              <div className="mt-4 sm:mt-5 flex justify-center gap-4 sm:gap-6 opacity-30">
+                <div className="w-8 sm:w-10 h-3 bg-red-500/50 rounded-full shadow-[0_0_10px_rgba(239,68,68,0.5)]" />
+                <div className="w-8 sm:w-10 h-3 bg-red-500/50 rounded-full shadow-[0_0_10px_rgba(239,68,68,0.5)]" />
               </div>
             </div>
           </div>
         </div>
 
+        {/* 行動裝置控制列 */}
+        <div className="md:hidden max-w-[30rem] mx-auto mb-8 px-2">
+          <div className="rounded-2xl border border-gray-800 bg-[#141418]/95 p-4 shadow-[0_20px_40px_rgba(0,0,0,0.35)]">
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={startOrResumeGame}
+                className="rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-600 px-4 py-3 text-sm font-black text-white shadow-lg shadow-emerald-500/20 active:translate-y-px"
+              >
+                開始 / 繼續
+              </button>
+              <button
+                type="button"
+                onClick={togglePauseFromMobile}
+                className="rounded-xl bg-gradient-to-b from-amber-400 to-amber-600 px-4 py-3 text-sm font-black text-white shadow-lg shadow-amber-500/20 active:translate-y-px"
+              >
+                暫停 / 繼續
+              </button>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  setDirectionPressed("left", true);
+                }}
+                onPointerUp={(e) => {
+                  e.preventDefault();
+                  setDirectionPressed("left", false);
+                }}
+                onPointerCancel={(e) => {
+                  e.preventDefault();
+                  setDirectionPressed("left", false);
+                }}
+                onPointerLeave={(e) => {
+                  e.preventDefault();
+                  setDirectionPressed("left", false);
+                }}
+                className="rounded-xl border border-sky-400/40 bg-sky-500/15 px-4 py-4 text-base font-black text-sky-100 shadow-inner shadow-sky-500/10 active:bg-sky-500/25"
+              >
+                左移
+              </button>
+              <button
+                type="button"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  setDirectionPressed("right", true);
+                }}
+                onPointerUp={(e) => {
+                  e.preventDefault();
+                  setDirectionPressed("right", false);
+                }}
+                onPointerCancel={(e) => {
+                  e.preventDefault();
+                  setDirectionPressed("right", false);
+                }}
+                onPointerLeave={(e) => {
+                  e.preventDefault();
+                  setDirectionPressed("right", false);
+                }}
+                className="rounded-xl border border-sky-400/40 bg-sky-500/15 px-4 py-4 text-base font-black text-sky-100 shadow-inner shadow-sky-500/10 active:bg-sky-500/25"
+              >
+                右移
+              </button>
+            </div>
+
+            <p className="mt-3 text-center text-xs leading-relaxed text-gray-400">
+              也可以直接點住遊戲畫面左半 / 右半來移動。
+            </p>
+          </div>
+        </div>
+
         {/* 說明區塊 Grid */}
-        <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="hidden md:grid max-w-4xl mx-auto grid-cols-1 md:grid-cols-2 gap-6">
           
           {/* 🎮 遊戲控制 */}
           <div className="bg-[#18181B] border border-gray-800/80 rounded-2xl p-6 md:p-8 shadow-xl transition hover:border-gray-700">
@@ -270,11 +404,11 @@ export default function KidsStairRushPage() {
             <div className="space-y-5">
               <div className="flex flex-col sm:flex-row sm:items-center gap-3 pb-4 border-b border-white/5">
                 <div className="flex gap-2">
-                  <kbd className="inline-flex items-center justify-center bg-gray-200 border border-gray-300 border-b-[3px] rounded-md px-3 py-1.5 text-sm font-mono font-bold text-gray-800 shadow-sm min-w-[5rem]">
-                    SPACE
-                  </kbd>
-                </div>
-                <span className="text-gray-400 flex-1">開始 / 暫停 / 重新遊戲</span>
+                <kbd className="inline-flex items-center justify-center bg-gray-200 border border-gray-300 border-b-[3px] rounded-md px-3 py-1.5 text-sm font-mono font-bold text-gray-800 shadow-sm min-w-[5rem]">
+                  SPACE
+                </kbd>
+              </div>
+                <span className="text-gray-400 flex-1">開始 / 暫停 / 重新遊戲，行動裝置可直接點按螢幕</span>
               </div>
 
               <div className="flex flex-col sm:flex-row sm:items-center gap-3 pb-4 border-b border-white/5">

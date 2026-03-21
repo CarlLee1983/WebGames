@@ -634,7 +634,9 @@ function drawReadyOverlay(ctx: CanvasRenderingContext2D) {
   ctx.font = "bold 36px monospace";
   ctx.fillText("NS-SHAFT", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 40);
   ctx.font = "18px monospace";
-  ctx.fillText("Press SPACE to Start", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 20);
+  ctx.fillText("Press SPACE or tap START", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 20);
+  ctx.font = "15px monospace";
+  ctx.fillText("Hold left/right to move", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 50);
 }
 
 function drawPausedOverlay(ctx: CanvasRenderingContext2D) {
@@ -644,6 +646,8 @@ function drawPausedOverlay(ctx: CanvasRenderingContext2D) {
   ctx.textAlign = "center";
   ctx.font = "bold 36px monospace";
   ctx.fillText("PAUSED", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+  ctx.font = "16px monospace";
+  ctx.fillText("Press SPACE or tap RESUME", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 32);
 }
 
 function drawGameOverOverlay(ctx: CanvasRenderingContext2D, s: GameState) {
@@ -662,7 +666,7 @@ function drawGameOverOverlay(ctx: CanvasRenderingContext2D, s: GameState) {
 
   ctx.fillStyle = "#facc15";
   ctx.font = "18px monospace";
-  ctx.fillText("Press SPACE to Restart", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 120);
+  ctx.fillText("Press SPACE or tap START", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 120);
 }
 
 // 用於 playwright 驗證的狀態輸出
@@ -677,4 +681,3 @@ export function renderGameToText(state: GameState): string {
     numActivePlatforms: state.platforms.length
   });
 }
-
