@@ -1,7 +1,6 @@
-/* UnoCSS is disabled due to compatibility issues with Next.js 16 + Turbopack + Bun
-   See: https://github.com/unocss/unocss/issues
-
-   Temporary workaround: using basic CSS for now */
+/* UnoCSS Fallback Styles
+   Note: @unocss/postcss is not compatible with Next.js 16 Webpack
+   Using fallback CSS for core utility classes instead */
 
 body {
   margin: 0;
