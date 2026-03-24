@@ -1,0 +1,44 @@
+{
+  "id": "chapter-1-forest",
+  "chapter": 1,
+  "title": "Forest Shrine",
+  "mode": "battle",
+  "description": "A combat chapter that opens the shrine gate only after every Enemy-tagged creature is gone.",
+  "glbUrl": "/WebGames/games/babylon-rpg/maps/chapter-1-forest.glb",
+  "hasGlb": false,
+  "playerSpawn": { "x": 0, "y": 1.25, "z": -12, "yaw": 0 },
+  "enemies": [
+    {
+      "id": "slime-a",
+      "position": { "x": -5, "y": 1.1, "z": -2 },
+      "hp": 2
+    },
+    {
+      "id": "slime-b",
+      "position": { "x": 4, "y": 1.1, "z": 0 },
+      "hp": 2
+    },
+    {
+      "id": "goblin-a",
+      "position": { "x": 6, "y": 1.1, "z": 8 },
+      "hp": 3
+    }
+  ],
+  "chests": [],
+  "gates": [
+    {
+      "id": "forest-gate",
+      "position": { "x": 0, "y": 2.6, "z": 13 },
+      "size": { "x": 4, "y": 5.2, "z": 0.8 }
+    }
+  ],
+  "movingPlatforms": [],
+  "trapZones": [
+    {
+      "id": "root-spikes",
+      "min": { "x": -8, "y": 0, "z": 2 },
+      "max": { "x": -2, "y": 1.6, "z": 6 },
+      "damage": 1
+    }
+  ]
+}

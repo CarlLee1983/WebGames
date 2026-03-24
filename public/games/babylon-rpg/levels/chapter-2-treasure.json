@@ -1,0 +1,34 @@
+{
+  "id": "chapter-2-treasure",
+  "chapter": 2,
+  "title": "Sunken Treasury",
+  "mode": "treasure",
+  "description": "A raycast chapter where the center line must hit the chest to collect the relic and unlock the gate.",
+  "glbUrl": "/WebGames/games/babylon-rpg/maps/chapter-2-treasure.glb",
+  "hasGlb": false,
+  "playerSpawn": { "x": 0, "y": 1.25, "z": -10, "yaw": 0 },
+  "enemies": [],
+  "chests": [
+    {
+      "id": "ancient-chest",
+      "position": { "x": 0, "y": 1.0, "z": 1 },
+      "loot": ["ancient-relic", "silver-key"]
+    }
+  ],
+  "gates": [
+    {
+      "id": "treasure-door",
+      "position": { "x": 0, "y": 2.6, "z": 14 },
+      "size": { "x": 4.2, "y": 5.2, "z": 0.8 }
+    }
+  ],
+  "movingPlatforms": [],
+  "trapZones": [
+    {
+      "id": "water-pit",
+      "min": { "x": -9, "y": 0, "z": 5 },
+      "max": { "x": 9, "y": 1.4, "z": 11 },
+      "damage": 1
+    }
+  ]
+}

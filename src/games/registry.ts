@@ -111,6 +111,15 @@ export const GAME_REGISTRY: GameDef[] = [
     status: 'published',
   },
   {
+    id: "babylon-rpg",
+    title: "Babylon RPG",
+    description: "A Zelda-style Babylon.js foundation with JSON-driven chapters, tag-based interactions, and IndexedDB saves.",
+    icon: "i-ph-sword-duotone",
+    href: "/games/babylon-rpg",
+    color: "bg-cyan-600",
+    status: "published",
+  },
+  {
     id: "2048",
     title: "2048",
     description: "Join the numbers and get to the 2048 tile!",

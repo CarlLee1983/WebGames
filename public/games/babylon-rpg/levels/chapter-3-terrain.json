@@ -1,0 +1,61 @@
+{
+  "id": "chapter-3-terrain",
+  "chapter": 3,
+  "title": "Sky Bridge",
+  "mode": "terrain",
+  "description": "A terrain chapter with moving platforms and trap zones that tests traversal and clean scene switching.",
+  "glbUrl": "/WebGames/games/babylon-rpg/maps/chapter-3-terrain.glb",
+  "hasGlb": false,
+  "playerSpawn": { "x": -10, "y": 1.25, "z": -10, "yaw": 0 },
+  "enemies": [],
+  "chests": [
+    {
+      "id": "bridge-cache",
+      "position": { "x": 10, "y": 1.0, "z": 4 },
+      "loot": ["bridge-pass"]
+    }
+  ],
+  "gates": [
+    {
+      "id": "sky-exit",
+      "position": { "x": 14, "y": 2.6, "z": 14 },
+      "size": { "x": 4.4, "y": 5.2, "z": 0.8 }
+    }
+  ],
+  "movingPlatforms": [
+    {
+      "id": "lift-a",
+      "position": { "x": -4, "y": 1.4, "z": -2 },
+      "speed": 1.2,
+      "path": [
+        { "x": -4, "y": 1.4, "z": -2 },
+        { "x": 0, "y": 2.2, "z": 2 },
+        { "x": 4, "y": 1.4, "z": 6 }
+      ]
+    },
+    {
+      "id": "lift-b",
+      "position": { "x": 6, "y": 1.2, "z": 8 },
+      "speed": 1.35,
+      "path": [
+        { "x": 6, "y": 1.2, "z": 8 },
+        { "x": 9, "y": 2.1, "z": 11 },
+        { "x": 12, "y": 1.2, "z": 13 }
+      ]
+    }
+  ],
+  "trapZones": [
+    {
+      "id": "acid-line",
+      "min": { "x": -2, "y": 0, "z": 0 },
+      "max": { "x": 2, "y": 1.2, "z": 14 },
+      "damage": 1
+    },
+    {
+      "id": "spike-pit",
+      "min": { "x": 4, "y": 0, "z": -6 },
+      "max": { "x": 12, "y": 1.2, "z": -2 },
+      "damage": 2
+    }
+  ]
+}

@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Babylon RPG Foundation</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #07121d;
+        --panel: rgba(9, 20, 34, 0.88);
+        --panel-border: rgba(148, 163, 184, 0.2);
+        --accent: #22d3ee;
+        --text: #e2e8f0;
+        --muted: #94a3b8;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        background:
+          radial-gradient(circle at top, rgba(34, 211, 238, 0.16), transparent 34%),
+          linear-gradient(180deg, #020617, #0f172a 55%, #111827);
+        color: var(--text);
+      }
+      .app {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 320px;
+        gap: 20px;
+        padding: 20px;
+      }
+      .viewport, .sidebar {
+        border: 1px solid var(--panel-border);
+        background: var(--panel);
+        border-radius: 24px;
+        box-shadow: 0 24px 80px rgba(2, 6, 23, 0.32);
+      }
+      .viewport { padding: 16px; }
+      .sidebar { padding: 18px; }
+      canvas {
+        width: 100%;
+        height: min(76vh, 880px);
+        min-height: 640px;
+        display: block;
+        border-radius: 18px;
+        background: #020617;
+      }
+      .toolbar {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+      button {
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 14px;
+        background: rgba(255,255,255,0.08);
+        color: white;
+        padding: 10px 12px;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      button:hover { background: rgba(255,255,255,0.14); }
+      h1, h2, p { margin: 0; }
+      .eyebrow {
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+      }
+      .sidebar h2 {
+        margin-top: 8px;
+        font-size: 28px;
+        line-height: 1.1;
+      }
+      .sidebar p {
+        margin-top: 10px;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      .stats {
+        display: grid;
+        gap: 10px;
+        margin-top: 18px;
+      }
+      .stat {
+        border-radius: 16px;
+        border: 1px solid rgba(148,163,184,0.16);
+        background: rgba(15, 23, 42, 0.75);
+        padding: 12px 14px;
+      }
+      .stat-label {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+      .stat-value {
+        margin-top: 6px;
+        font-weight: 700;
+      }
+      .notes {
+        margin-top: 16px;
+        border-radius: 18px;
+        background: rgba(2, 6, 23, 0.72);
+        padding: 14px;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      .notes ul { margin: 10px 0 0; padding-left: 18px; }
+      @media (max-width: 980px) {
+        .app { grid-template-columns: 1fr; }
+        canvas { min-height: 520px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <section class="viewport">
+        <div class="toolbar">
+          <button id="saveBtn">Save</button>
+          <button id="loadBtn">Load</button>
+          <button id="resetBtn">Reset</button>
+          <button id="nextBtn">Next Level</button>
+        </div>
+        <canvas id="game"></canvas>
+      </section>
+      <aside class="sidebar">
+        <div class="eyebrow">Live Snapshot</div>
+        <h2 id="title">Booting</h2>
+        <p id="description">Loading manifest and chapter data...</p>
+        <div class="stats" id="stats"></div>
+        <div class="notes">
+          <div class="eyebrow">Controls</div>
+          <ul>
+            <li>WASD or arrow keys to move</li>
+            <li>Space or Enter to attack nearby enemies</li>
+            <li>E to open chest or enter an open gate</li>
+            <li>F to toggle fullscreen, Esc to exit</li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+    <script>
+      const SAVE_KEY = "web-games:babylon-rpg:save";
+      const DB_NAME = "web-games-babylon-rpg";
+      const DB_STORE = "saves";
+      const DB_SLOT = "main";
+      const gameBasePath = location.pathname.includes("/WebGames/") ? "/WebGames" : "";
+      const input = { up: false, down: false, left: false, right: false, attack: false, interact: false };
+      const state = {
+        manifest: null,
+        level: null,
+        save: null,
+        player: { x: 0, y: 1.25, z: 0, yaw: 0 },
+        enemies: [],
+        chests: [],
+        gates: [],
+        platforms: [],
+        lastEvent: "Initializing",
+        trapCooldownMs: 0,
+        transitioning: false,
+        snapshot: null,
+      };
+
+      const canvas = document.getElementById("game");
+      const ctx = canvas.getContext("2d");
+      const titleEl = document.getElementById("title");
+      const descriptionEl = document.getElementById("description");
+      const statsEl = document.getElementById("stats");
+
+      function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+      function lerp(a, b, t) { return a + (b - a) * t; }
+      function distance2d(a, b) { return Math.hypot(a.x - b.x, a.z - b.z); }
+      function toDegrees(radians) { return radians * 180 / Math.PI; }
+      function toRadians(degrees) { return degrees * Math.PI / 180; }
+
+      async function openDb() {
+        if (!("indexedDB" in window)) return null;
+        return new Promise((resolve) => {
+          const request = indexedDB.open(DB_NAME, 1);
+          request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE);
+          };
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => resolve(null);
+        });
+      }
+
+      async function loadSave() {
+        const db = await openDb();
+        if (db) {
+          return new Promise((resolve) => {
+            const tx = db.transaction(DB_STORE, "readonly");
+            const request = tx.objectStore(DB_STORE).get(DB_SLOT);
+            request.onsuccess = () => resolve(request.result || null);
+            request.onerror = () => resolve(null);
+          });
+        }
+        try {
+          const raw = localStorage.getItem(SAVE_KEY);
+          return raw ? JSON.parse(raw) : null;
+        } catch {
+          return null;
+        }
+      }
+
+      async function saveSave(nextSave) {
+        const db = await openDb();
+        if (db) {
+          await new Promise((resolve) => {
+            const tx = db.transaction(DB_STORE, "readwrite");
+            tx.objectStore(DB_STORE).put(nextSave, DB_SLOT);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+          });
+          return;
+        }
+        try { localStorage.setItem(SAVE_KEY, JSON.stringify(nextSave)); } catch {}
+      }
+
+      async function clearSave() {
+        const db = await openDb();
+        if (db) {
+          await new Promise((resolve) => {
+            const tx = db.transaction(DB_STORE, "readwrite");
+            tx.objectStore(DB_STORE).delete(DB_SLOT);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+          });
+        }
+        try { localStorage.removeItem(SAVE_KEY); } catch {}
+      }
+
+      function createDefaultSave(level) {
+        return {
+          version: 1,
+          currentChapter: level.chapter,
+          levelId: level.id,
+          playerPosition: { x: level.playerSpawn.x, y: level.playerSpawn.y, z: level.playerSpawn.z, yaw: level.playerSpawn.yaw || 0 },
+          inventory: [],
+          unlockedGates: [],
+          playerStats: { hp: 8, maxHp: 8, attack: 2, defense: 1 },
+          collectedItemsByLevel: {},
+        };
+      }
+
+      async function loadManifest() {
+        if (state.manifest) return state.manifest;
+        const response = await fetch(`${gameBasePath}/games/babylon-rpg/levels/manifest.json`);
+        state.manifest = await response.json();
+        return state.manifest;
+      }
+
+      async function loadLevel(levelId) {
+        const manifest = await loadManifest();
+        const entry = manifest.levels.find((level) => level.id === levelId) || manifest.levels[0];
+        const response = await fetch(`${gameBasePath}/games/babylon-rpg/levels/${entry.path}`);
+        return response.json();
+      }
+
+      async function mountLevel(level, save, eventLabel) {
+        state.level = level;
+        state.save = save;
+        state.player = {
+          x: save.playerPosition.x,
+          y: save.playerPosition.y,
+          z: save.playerPosition.z,
+          yaw: toRadians(save.playerPosition.yaw),
+        };
+        const collected = save.collectedItemsByLevel[level.id] || [];
+        state.enemies = level.enemies.map((enemy) => ({ id: enemy.id, position: { ...enemy.position }, hp: enemy.hp || 3, alive: true }));
+        state.chests = level.chests.map((chest) => ({ id: chest.id, position: { ...chest.position }, loot: chest.loot || [], alive: !collected.includes(chest.id) }));
+        state.gates = level.gates.map((gate) => ({ id: gate.id, position: { ...gate.position }, size: { ...gate.size }, open: save.unlockedGates.includes(gate.id), progress: save.unlockedGates.includes(gate.id) ? 1 : 0 }));
+        state.platforms = level.movingPlatforms.map((platform) => ({
+          id: platform.id,
+          path: platform.path && platform.path.length ? platform.path.map((point) => ({ ...point })) : [{ ...platform.position }],
+          speed: platform.speed || 1.25,
+          pathIndex: 0,
+          progress: 0,
+          position: { ...platform.position },
+        }));
+        state.trapCooldownMs = 0;
+        state.transitioning = false;
+        state.lastEvent = eventLabel;
+        syncSavePlayerPosition();
+        emitSnapshot();
+      }
+
+      function syncSavePlayerPosition() {
+        if (!state.save) return;
+        state.save.playerPosition = {
+          x: Number(state.player.x.toFixed(2)),
+          y: state.player.y,
+          z: Number(state.player.z.toFixed(2)),
+          yaw: Number(toDegrees(state.player.yaw).toFixed(1)),
+        };
+      }
+
+      function getObjective(level) {
+        if (level.mode === "battle") return "Defeat every roaming enemy to open the shrine gate.";
+        if (level.mode === "treasure") return "Reach the chest, collect the relic, then head for the door.";
+        return "Cross moving platforms, dodge traps, claim the bridge cache, and escape.";
+      }
+
+      function emitSnapshot() {
+        if (!state.level || !state.save) return;
+        const selectedInteractable = [...state.chests.filter((entry) => entry.alive), ...state.gates.filter((entry) => entry.open)]
+          .sort((a, b) => distance2d(a.position, state.player) - distance2d(b.position, state.player))
+          .find((entry) => distance2d(entry.position, state.player) <= 3.5)?.id || null;
+
+        state.snapshot = {
+          coordinateSystem: "Top-down canvas. x increases right, z increases downward on screen, y is metadata only.",
+          mode: state.level.mode,
+          chapter: state.level.chapter,
+          levelId: state.level.id,
+          title: state.level.title,
+          description: state.level.description,
+          player: {
+            x: Number(state.player.x.toFixed(2)),
+            y: Number(state.player.y.toFixed(2)),
+            z: Number(state.player.z.toFixed(2)),
+            yaw: Number(toDegrees(state.player.yaw).toFixed(1)),
+            hp: state.save.playerStats.hp,
+            maxHp: state.save.playerStats.maxHp,
+          },
+          inventory: [...state.save.inventory],
+          unlockedGates: [...state.save.unlockedGates],
+          objective: getObjective(state.level),
+          enemyCount: state.enemies.filter((enemy) => enemy.alive).length,
+          chestCount: state.chests.filter((chest) => chest.alive).length,
+          trapCount: state.level.trapZones.length,
+          gateStates: state.gates.map((gate) => ({ id: gate.id, open: gate.open })),
+          enemies: state.enemies.map((enemy) => ({ id: enemy.id, x: enemy.position.x, y: enemy.position.y, z: enemy.position.z, hp: enemy.hp, alive: enemy.alive })),
+          chests: state.chests.map((chest) => ({ id: chest.id, x: chest.position.x, y: chest.position.y, z: chest.position.z, alive: chest.alive, loot: [...chest.loot] })),
+          gates: state.gates.map((gate) => ({ id: gate.id, x: gate.position.x, y: gate.position.y, z: gate.position.z, open: gate.open })),
+          platforms: state.platforms.map((platform) => ({ id: platform.id, x: platform.position.x, y: platform.position.y, z: platform.position.z })),
+          selectedInteractable,
+          lastEvent: state.lastEvent,
+        };
+
+        titleEl.textContent = state.snapshot.title;
+        descriptionEl.textContent = `${state.snapshot.description} ${state.snapshot.lastEvent}`;
+        statsEl.innerHTML = [
+          ["Player", `HP ${state.snapshot.player.hp}/${state.snapshot.player.maxHp} · yaw ${state.snapshot.player.yaw}°`],
+          ["Position", `${state.snapshot.player.x}, ${state.snapshot.player.y}, ${state.snapshot.player.z}`],
+          ["Inventory", state.snapshot.inventory.join(", ") || "empty"],
+          ["Objective", state.snapshot.objective],
+          ["Unlocked gates", state.snapshot.unlockedGates.join(", ") || "none"],
+          ["Selected", state.snapshot.selectedInteractable || "none"],
+        ].map(([label, value]) => `<div class="stat"><div class="stat-label">${label}</div><div class="stat-value">${value}</div></div>`).join("");
+      }
+
+      function resizeCanvas() {
+        const rect = canvas.getBoundingClientRect();
+        const ratio = window.devicePixelRatio || 1;
+        canvas.width = Math.max(960, Math.round(rect.width * ratio));
+        canvas.height = Math.max(720, Math.round(rect.height * ratio));
+      }
+
+      function draw() {
+        if (!state.level || !state.save) return;
+        resizeCanvas();
+        const width = canvas.width;
+        const height = canvas.height;
+        const mapSize = Math.min(width, height) * 0.74;
+        const originX = (width - mapSize) / 2;
+        const originY = (height - mapSize) / 2;
+        const toCanvas = (value) => ({ x: originX + ((value.x + 16) / 32) * mapSize, y: originY + ((value.z + 16) / 32) * mapSize });
+
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = "#020617";
+        ctx.fillRect(0, 0, width, height);
+        const gradient = ctx.createLinearGradient(0, originY, 0, originY + mapSize);
+        gradient.addColorStop(0, state.level.mode === "battle" ? "#16351d" : state.level.mode === "treasure" ? "#3d2b14" : "#1b243b");
+        gradient.addColorStop(1, "#0b1220");
+        ctx.fillStyle = gradient;
+        ctx.fillRect(originX, originY, mapSize, mapSize);
+
+        ctx.strokeStyle = "rgba(255,255,255,0.12)";
+        ctx.lineWidth = 1;
+        for (let line = 0; line <= 8; line += 1) {
+          const offset = (mapSize / 8) * line;
+          ctx.beginPath(); ctx.moveTo(originX + offset, originY); ctx.lineTo(originX + offset, originY + mapSize); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(originX, originY + offset); ctx.lineTo(originX + mapSize, originY + offset); ctx.stroke();
+        }
+
+        state.level.trapZones.forEach((trap) => {
+          const min = toCanvas(trap.min);
+          const max = toCanvas(trap.max);
+          ctx.fillStyle = "rgba(239,68,68,0.18)";
+          ctx.fillRect(min.x, min.y, max.x - min.x, max.y - min.y);
+          ctx.strokeStyle = "rgba(248,113,113,0.55)";
+          ctx.strokeRect(min.x, min.y, max.x - min.x, max.y - min.y);
+        });
+
+        state.platforms.forEach((platform) => {
+          const point = toCanvas(platform.position);
+          ctx.fillStyle = "#f4d35e";
+          ctx.fillRect(point.x - 18, point.y - 10, 36, 20);
+        });
+
+        state.gates.forEach((gate) => {
+          const point = toCanvas(gate.position);
+          ctx.fillStyle = gate.open ? "#67e8f9" : "#2f6f93";
+          ctx.fillRect(point.x - 18, point.y - 22 + gate.progress * -14, 36, 44);
+        });
+
+        state.chests.forEach((chest) => {
+          const point = toCanvas(chest.position);
+          ctx.fillStyle = chest.alive ? "#f59e0b" : "#78350f";
+          ctx.fillRect(point.x - 10, point.y - 8, 20, chest.alive ? 16 : 8);
+        });
+
+        state.enemies.forEach((enemy) => {
+          if (!enemy.alive) return;
+          const point = toCanvas(enemy.position);
+          ctx.fillStyle = "#ef4444";
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, 12, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        const playerPoint = toCanvas(state.player);
+        ctx.fillStyle = "#fde68a";
+        ctx.beginPath();
+        ctx.arc(playerPoint.x, playerPoint.y, 12, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#38bdf8";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(playerPoint.x, playerPoint.y);
+        ctx.lineTo(playerPoint.x + Math.sin(state.player.yaw) * 18, playerPoint.y + Math.cos(state.player.yaw) * 18);
+        ctx.stroke();
+      }
+
+      function updatePlatforms(dtSeconds) {
+        state.platforms.forEach((platform) => {
+          if (platform.path.length < 2) return;
+          const current = platform.path[platform.pathIndex] || platform.path[0];
+          const nextIndex = (platform.pathIndex + 1) % platform.path.length;
+          const next = platform.path[nextIndex] || platform.path[0];
+          const previous = { ...platform.position };
+          platform.progress = clamp(platform.progress + dtSeconds * platform.speed * 0.35, 0, 1);
+          platform.position = {
+            x: lerp(current.x, next.x, platform.progress),
+            y: lerp(current.y, next.y, platform.progress),
+            z: lerp(current.z, next.z, platform.progress),
+          };
+          if (platform.progress >= 1) {
+            platform.pathIndex = nextIndex;
+            platform.progress = 0;
+          }
+          if (distance2d(state.player, previous) < 1.8) {
+            state.player.x += platform.position.x - previous.x;
+            state.player.z += platform.position.z - previous.z;
+          }
+        });
+      }
+
+      function updateGates(dtSeconds) {
+        const enemiesAlive = state.enemies.filter((enemy) => enemy.alive).length;
+        const chestsAlive = state.chests.filter((chest) => chest.alive).length;
+        const shouldOpen = state.level.mode === "battle" ? enemiesAlive === 0 : chestsAlive === 0;
+        state.gates.forEach((gate) => {
+          gate.progress = clamp(gate.progress + (shouldOpen ? dtSeconds : -dtSeconds) * 1.4, 0, 1);
+          gate.open = gate.progress >= 1;
+          if (gate.open && !state.save.unlockedGates.includes(gate.id)) {
+            state.save.unlockedGates = [...state.save.unlockedGates, gate.id];
+            state.lastEvent = `Gate ${gate.id} unlocked`;
+            saveSave(state.save);
+          }
+        });
+      }
+
+      function updateTraps() {
+        if (state.trapCooldownMs > 0) return;
+        for (const trap of state.level.trapZones) {
+          if (state.player.x >= trap.min.x && state.player.x <= trap.max.x && state.player.z >= trap.min.z && state.player.z <= trap.max.z) {
+            state.save.playerStats.hp = Math.max(0, state.save.playerStats.hp - trap.damage);
+            state.player.x -= 1.1;
+            state.player.z -= 1.1;
+            state.trapCooldownMs = 900;
+            state.lastEvent = `${trap.id} triggered for ${trap.damage} damage`;
+            saveSave(state.save);
+            break;
+          }
+        }
+      }
+
+      function performAttack() {
+        const target = state.enemies
+          .filter((enemy) => enemy.alive && distance2d(enemy.position, state.player) <= 3.4)
+          .sort((a, b) => distance2d(a.position, state.player) - distance2d(b.position, state.player))[0];
+        if (!target) {
+          state.lastEvent = "Attack missed";
+          return;
+        }
+        target.hp -= state.save.playerStats.attack;
+        state.lastEvent = target.hp <= 0 ? `Enemy ${target.id} defeated` : `Hit ${target.id} for ${state.save.playerStats.attack}`;
+        if (target.hp <= 0) target.alive = false;
+      }
+
+      async function performInteract() {
+        const chest = state.chests
+          .filter((entry) => entry.alive && distance2d(entry.position, state.player) <= 3)
+          .sort((a, b) => distance2d(a.position, state.player) - distance2d(b.position, state.player))[0];
+        if (chest) {
+          chest.alive = false;
+          state.save.inventory = Array.from(new Set([...state.save.inventory, ...chest.loot]));
+          state.save.collectedItemsByLevel = {
+            ...state.save.collectedItemsByLevel,
+            [state.level.id]: Array.from(new Set([...(state.save.collectedItemsByLevel[state.level.id] || []), chest.id])),
+          };
+          state.lastEvent = `Collected ${chest.id}`;
+          await saveSave(state.save);
+          return;
+        }
+
+        const gate = state.gates
+          .filter((entry) => entry.open && distance2d(entry.position, state.player) <= 3.5)
+          .sort((a, b) => distance2d(a.position, state.player) - distance2d(b.position, state.player))[0];
+        if (gate) {
+          await loadNextLevel();
+          return;
+        }
+
+        state.lastEvent = "Nothing interactable in view";
+      }
+
+      function update(dtSeconds) {
+        if (!state.level || !state.save) return;
+        state.trapCooldownMs = Math.max(0, state.trapCooldownMs - dtSeconds * 1000);
+        const horizontal = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+        const vertical = (input.down ? 1 : 0) - (input.up ? 1 : 0);
+        const speed = state.level.mode === "terrain" ? 5.2 : 4.4;
+        if (horizontal !== 0 || vertical !== 0) {
+          const length = Math.hypot(horizontal, vertical);
+          state.player.x = clamp(state.player.x + horizontal / length * speed * dtSeconds, -15, 15);
+          state.player.z = clamp(state.player.z + vertical / length * speed * dtSeconds, -15, 15);
+          state.player.yaw = Math.atan2(horizontal, vertical);
+        }
+        updatePlatforms(dtSeconds);
+        updateGates(dtSeconds);
+        updateTraps();
+        if (input.attack) { input.attack = false; performAttack(); }
+        if (input.interact) { input.interact = false; performInteract(); }
+        syncSavePlayerPosition();
+      }
+
+      async function loadNextLevel() {
+        if (state.transitioning) return;
+        state.transitioning = true;
+        const manifest = await loadManifest();
+        const index = manifest.levels.findIndex((entry) => entry.id === state.level.id);
+        if (index === -1 || index + 1 >= manifest.levels.length) {
+          state.lastEvent = "Chapter complete";
+          state.transitioning = false;
+          emitSnapshot();
+          return;
+        }
+        const nextLevel = await loadLevel(manifest.levels[index + 1].id);
+        const nextSave = {
+          ...state.save,
+          currentChapter: nextLevel.chapter,
+          levelId: nextLevel.id,
+          playerPosition: { x: nextLevel.playerSpawn.x, y: nextLevel.playerSpawn.y, z: nextLevel.playerSpawn.z, yaw: nextLevel.playerSpawn.yaw || 0 },
+        };
+        await mountLevel(nextLevel, nextSave, `Loaded ${nextLevel.title}`);
+        await saveSave(nextSave);
+      }
+
+      async function resetGame() {
+        await clearSave();
+        const manifest = await loadManifest();
+        const level = await loadLevel(manifest.startLevelId);
+        await mountLevel(level, createDefaultSave(level), "Started new chapter");
+      }
+
+      function frame() {
+        update(1 / 60);
+        draw();
+        emitSnapshot();
+        requestAnimationFrame(frame);
+      }
+
+      window.render_game_to_text = () => JSON.stringify(state.snapshot);
+      window.advanceTime = (ms) => {
+        const steps = Math.max(1, Math.round(ms / (1000 / 60)));
+        for (let i = 0; i < steps; i += 1) update(1 / 60);
+        draw();
+        emitSnapshot();
+      };
+
+      document.addEventListener("keydown", async (event) => {
+        const key = event.key.toLowerCase();
+        if (key === "w" || key === "arrowup") input.up = true;
+        if (key === "s" || key === "arrowdown") input.down = true;
+        if (key === "a" || key === "arrowleft") input.left = true;
+        if (key === "d" || key === "arrowright") input.right = true;
+        if (key === " " || key === "enter") input.attack = true;
+        if (key === "e") input.interact = true;
+        if (key === "f") {
+          event.preventDefault();
+          if (document.fullscreenElement) await document.exitFullscreen();
+          else document.documentElement.requestFullscreen?.();
+        }
+        if (key === "escape" && document.fullscreenElement) await document.exitFullscreen();
+      });
+
+      document.addEventListener("keyup", (event) => {
+        const key = event.key.toLowerCase();
+        if (key === "w" || key === "arrowup") input.up = false;
+        if (key === "s" || key === "arrowdown") input.down = false;
+        if (key === "a" || key === "arrowleft") input.left = false;
+        if (key === "d" || key === "arrowright") input.right = false;
+        if (key === " " || key === "enter") input.attack = false;
+        if (key === "e") input.interact = false;
+      });
+
+      document.getElementById("saveBtn").addEventListener("click", async () => {
+        syncSavePlayerPosition();
+        await saveSave(state.save);
+        state.lastEvent = "Saved progress";
+      });
+      document.getElementById("loadBtn").addEventListener("click", async () => {
+        const save = await loadSave();
+        if (!save) return;
+        const level = await loadLevel(save.levelId);
+        await mountLevel(level, save, "Loaded save slot");
+      });
+      document.getElementById("resetBtn").addEventListener("click", resetGame);
+      document.getElementById("nextBtn").addEventListener("click", loadNextLevel);
+      window.addEventListener("resize", draw);
+
+      (async () => {
+        const manifest = await loadManifest();
+        const save = await loadSave();
+        const level = await loadLevel(save?.levelId || manifest.startLevelId);
+        await mountLevel(level, save || createDefaultSave(level), save ? "Loaded save slot" : "Started new chapter");
+        draw();
+        emitSnapshot();
+        requestAnimationFrame(frame);
+      })().catch((error) => {
+        titleEl.textContent = "Boot failed";
+        descriptionEl.textContent = error instanceof Error ? error.message : String(error);
+      });
+    </script>
+  </body>
+</html>

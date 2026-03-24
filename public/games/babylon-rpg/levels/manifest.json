@@ -1,0 +1,17 @@
+{
+  "startLevelId": "chapter-1-forest",
+  "levels": [
+    {
+      "id": "chapter-1-forest",
+      "path": "chapter-1-forest.json"
+    },
+    {
+      "id": "chapter-2-treasure",
+      "path": "chapter-2-treasure.json"
+    },
+    {
+      "id": "chapter-3-terrain",
+      "path": "chapter-3-terrain.json"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import { defineConfig, presetUno, presetIcons, presetTypography } from 'unocss'
+import { defineConfig, presetUno, presetIcons, presetTypography, transformerDirectives, transformerVariantGroup } from 'unocss'
 
 export default defineConfig({
   presets: [
@@ -9,4 +9,22 @@ export default defineConfig({
     }),
     presetTypography(),
   ],
+  transformers: [
+    transformerDirectives(),
+    transformerVariantGroup(),
+  ],
+  content: {
+    pipeline: {
+      exclude: [
+        'node_modules',
+        'dist',
+        '.next',
+        '.worktree',
+        'out',
+        'build',
+        '**/.next/**',
+        '**/.worktree/**',
+      ],
+    }
+  },
 })
