@@ -45,4 +45,7 @@ output/
 progress.md
 .worktree/
 .playwright-mcp/
-\n# Temporary logs and scripts\ndev.log\n.tmp-web-game-client.js
+
+# Temporary logs and scripts
+dev.log
+.tmp-web-game-client.js
