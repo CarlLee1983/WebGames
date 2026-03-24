@@ -1,43 +1,8 @@
-/* UnoCSS Fallback Styles
-   Note: @unocss/postcss is not compatible with Next.js 16 Webpack
-   Using fallback CSS for core utility classes instead */
+@unocss;
 
 body {
   margin: 0;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   background-color: #f3f4f6;
   color: #1f2937;
-}
-
-html, body, #__next {
-  height: 100%;
-}
-
-.flex {
-  display: flex;
-}
-
-.min-h-screen {
-  min-height: 100vh;
-}
-
-.flex-col {
-  flex-direction: column;
-}
-
-.bg-gray-50 {
-  background-color: #f9fafb;
-}
-
-.text-gray-900 {
-  color: #111827;
-}
-
-.antialiased {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-.flex-grow {
-  flex-grow: 1;
 }
