@@ -1,196 +1,417 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useEffect, useRef, useState, type MutableRefObject } from "react";
+
 import Container from "@/components/common/Container";
 
-const BOARD_SIZE = 15;
-type Player = 'black' | 'white';
-type Cell = Player | null;
+import {
+  type AiDifficulty,
+  BOARD_SIZE,
+  cloneBoard,
+  createEmptyBoard,
+  getComputerMove,
+  getCurrentPlayer,
+  playMove,
+  type Board,
+  type Player,
+  type Winner,
+} from "./utils";
+
+type GameMode = "local" | "computer";
+
+const DIFFICULTY_LABELS: Record<AiDifficulty, string> = {
+  easy: "Easy",
+  normal: "Normal",
+  hard: "Hard",
+};
+
+type HistoryEntry = {
+  board: Board;
+  isBlackNext: boolean;
+};
+
+type GameState = {
+  board: Board;
+  isBlackNext: boolean;
+  winner: Winner;
+  history: HistoryEntry[];
+};
+
+function createInitialGameState(): GameState {
+  return {
+    board: createEmptyBoard(),
+    isBlackNext: true,
+    winner: null,
+    history: [],
+  };
+}
+
+function clearScheduledAiMove(timeoutRef: MutableRefObject<number | null>) {
+  if (timeoutRef.current !== null) {
+    window.clearTimeout(timeoutRef.current);
+    timeoutRef.current = null;
+  }
+}
+
+function buildNextGameState(previous: GameState, row: number, col: number, player: Player): GameState {
+  if (previous.winner || getCurrentPlayer(previous.isBlackNext) !== player) {
+    return previous;
+  }
+
+  const result = playMove(previous.board, row, col, player);
+
+  if (!result) {
+    return previous;
+  }
+
+  return {
+    board: result.board,
+    isBlackNext: result.winner ? previous.isBlackNext : !previous.isBlackNext,
+    winner: result.winner,
+    history: [
+      ...previous.history,
+      {
+        board: cloneBoard(previous.board),
+        isBlackNext: previous.isBlackNext,
+      },
+    ],
+  };
+}
+
+function getUndoState(previous: GameState, gameMode: GameMode): GameState {
+  if (previous.history.length === 0 || previous.winner) {
+    return previous;
+  }
+
+  const movesToUndo =
+    gameMode === "computer" ? (previous.isBlackNext ? Math.min(2, previous.history.length) : 1) : 1;
+  const nextHistoryLength = previous.history.length - movesToUndo;
+  const snapshot = previous.history[nextHistoryLength];
+
+  if (!snapshot) {
+    return createInitialGameState();
+  }
+
+  return {
+    board: cloneBoard(snapshot.board),
+    isBlackNext: snapshot.isBlackNext,
+    winner: null,
+    history: previous.history.slice(0, nextHistoryLength),
+  };
+}
+
+function getWinnerTitle(winner: Winner, gameMode: GameMode): string {
+  if (winner === "draw") {
+    return "IT'S A DRAW!";
+  }
+
+  if (gameMode === "computer") {
+    return winner === "black" ? "YOU WIN!" : "COMPUTER WINS!";
+  }
+
+  return `${winner?.toUpperCase()} WINS!`;
+}
+
+function getWinnerSubtitle(winner: Winner, gameMode: GameMode): string {
+  if (winner === "draw") {
+    return "The board is full and nobody found the finishing line.";
+  }
+
+  if (gameMode === "computer") {
+    return winner === "black" ? "You found the winning line first." : "The computer found the better sequence.";
+  }
+
+  return "Excellent game of strategy.";
+}
 
 export default function GomokuGame() {
-  const [board, setBoard] = useState<Cell[][]>(
-    Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null))
-  );
-  const [isBlackNext, setIsBlackNext] = useState(true);
-  const [winner, setWinner] = useState<Player | 'draw' | null>(null);
-  const [history, setHistory] = useState<Cell[][][]>([]);
+  const [gameMode, setGameMode] = useState<GameMode>("local");
+  const [difficulty, setDifficulty] = useState<AiDifficulty>("normal");
+  const [game, setGame] = useState<GameState>(() => createInitialGameState());
+  const aiTimeoutRef = useRef<number | null>(null);
 
-  const checkWinner = (row: number, col: number, player: Player, currentBoard: Cell[][]) => {
-    const directions = [
-      [0, 1],  // Horizontal
-      [1, 0],  // Vertical
-      [1, 1],  // Diagonal \
-      [1, -1], // Diagonal /
-    ];
+  const currentPlayer = getCurrentPlayer(game.isBlackNext);
+  const isComputerMode = gameMode === "computer";
+  const isComputerTurn = isComputerMode && currentPlayer === "white" && !game.winner;
+  const canPlaceStone = !game.winner && (!isComputerMode || currentPlayer === "black");
 
-    for (const [dr, dc] of directions) {
-      let count = 1;
+  useEffect(() => {
+    if (!isComputerTurn) {
+      clearScheduledAiMove(aiTimeoutRef);
+      return;
+    }
 
-      // Check forward
-      for (let i = 1; i < 5; i++) {
-        const r = row + dr * i;
-        const c = col + dc * i;
-        if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && currentBoard[r][c] === player) {
-          count++;
-        } else {
-          break;
-        }
+    clearScheduledAiMove(aiTimeoutRef);
+    aiTimeoutRef.current = window.setTimeout(() => {
+      const move = getComputerMove(game.board, difficulty);
+
+      if (move) {
+        setGame((previous) => buildNextGameState(previous, move.row, move.col, "white"));
       }
 
-      // Check backward
-      for (let i = 1; i < 5; i++) {
-        const r = row - dr * i;
-        const c = col - dc * i;
-        if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && currentBoard[r][c] === player) {
-          count++;
-        } else {
-          break;
-        }
-      }
+      aiTimeoutRef.current = null;
+    }, 420);
 
-      if (count >= 5) return true;
+    return () => clearScheduledAiMove(aiTimeoutRef);
+  }, [difficulty, game.board, isComputerTurn]);
+
+  function placeStone(row: number, col: number) {
+    if (!canPlaceStone) {
+      return;
     }
-    return false;
-  };
 
-  const placeStone = (row: number, col: number) => {
-    if (board[row][col] || winner) return;
+    setGame((previous) => buildNextGameState(previous, row, col, getCurrentPlayer(previous.isBlackNext)));
+  }
 
-    const currentPlayer = isBlackNext ? 'black' : 'white';
-    const newBoard = board.map(r => [...r]);
-    newBoard[row][col] = currentPlayer;
+  function resetGame() {
+    clearScheduledAiMove(aiTimeoutRef);
+    setGame(createInitialGameState());
+  }
 
-    setHistory([...history, board.map(r => [...r])]);
-    setBoard(newBoard);
-
-    if (checkWinner(row, col, currentPlayer, newBoard)) {
-      setWinner(currentPlayer);
-    } else if (newBoard.every(r => r.every(c => c !== null))) {
-      setWinner('draw');
-    } else {
-      setIsBlackNext(!isBlackNext);
+  function changeMode(nextMode: GameMode) {
+    if (nextMode === gameMode) {
+      return;
     }
-  };
 
-  const resetGame = () => {
-    setBoard(Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null)));
-    setIsBlackNext(true);
-    setWinner(null);
-    setHistory([]);
-  };
+    clearScheduledAiMove(aiTimeoutRef);
+    if (nextMode === "computer") {
+      setDifficulty("normal");
+    }
+    setGameMode(nextMode);
+    setGame(createInitialGameState());
+  }
 
-  const undoMove = () => {
-    if (history.length === 0 || winner) return;
-    const previousBoard = history[history.length - 1];
-    setBoard(previousBoard);
-    setHistory(history.slice(0, -1));
-    setIsBlackNext(!isBlackNext);
-  };
+  function changeDifficulty(nextDifficulty: AiDifficulty) {
+    if (nextDifficulty === difficulty) {
+      return;
+    }
+
+    clearScheduledAiMove(aiTimeoutRef);
+    setDifficulty(nextDifficulty);
+    setGame(createInitialGameState());
+  }
+
+  function undoMove() {
+    clearScheduledAiMove(aiTimeoutRef);
+    setGame((previous) => getUndoState(previous, gameMode));
+  }
 
   return (
     <div className="py-12 sm:py-16">
       <Container size="lg">
-        <div className="mb-8 text-center">
-          <h1 className="mb-2 flex items-center justify-center gap-3 text-4xl font-extrabold text-amber-800 sm:text-5xl">
-            <span className="i-ph-circle-duotone" /> Gomoku
-          </h1>
-          <p className="text-gray-600">Get five in a row to win. Black starts first.</p>
+        <div className="mb-8 flex flex-col items-center justify-between gap-4 sm:flex-row sm:items-end">
+          <div className="text-center sm:text-left">
+            <h1 className="mb-2 flex items-center justify-center gap-3 text-4xl font-extrabold text-amber-800 sm:justify-start sm:text-5xl">
+              <span className="i-ph-circle-duotone" /> Gomoku
+            </h1>
+            <p className="max-w-2xl text-gray-600">
+              {isComputerMode
+                ? "Challenge the computer as Black. Build five in a row before it does."
+                : "Local head-to-head mode. Get five in a row to win. Black starts first."}
+            </p>
+          </div>
+
+          <div className="flex flex-col items-stretch gap-2">
+            <div className="flex rounded-2xl bg-amber-100 p-1 shadow-inner shadow-amber-900/10">
+              <button
+                onClick={() => changeMode("local")}
+                className={`rounded-xl px-4 py-2 text-sm font-bold transition ${
+                  gameMode === "local" ? "bg-white text-amber-700 shadow-sm" : "text-amber-700/70 hover:text-amber-800"
+                }`}
+              >
+                Local 2P
+              </button>
+              <button
+                onClick={() => changeMode("computer")}
+                className={`rounded-xl px-4 py-2 text-sm font-bold transition ${
+                  gameMode === "computer"
+                    ? "bg-white text-amber-700 shadow-sm"
+                    : "text-amber-700/70 hover:text-amber-800"
+                }`}
+              >
+                Vs Computer
+              </button>
+            </div>
+
+            {isComputerMode && (
+              <div className="flex rounded-2xl bg-amber-100 p-1 shadow-inner shadow-amber-900/10">
+                {(["easy", "normal", "hard"] as AiDifficulty[]).map((level) => (
+                  <button
+                    key={level}
+                    onClick={() => changeDifficulty(level)}
+                    className={`rounded-xl px-3 py-2 text-sm font-bold transition sm:px-4 ${
+                      difficulty === level
+                        ? "bg-white text-amber-700 shadow-sm"
+                        : "text-amber-700/70 hover:text-amber-800"
+                    }`}
+                  >
+                    {DIFFICULTY_LABELS[level]}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-center">
-          {/* Game Info Panel (Mobile top, Desktop left/right) */}
-          <div className="order-2 flex flex-col gap-4 lg:order-1 lg:w-48">
-            <div className={`rounded-2xl p-4 shadow-sm border-2 ${isBlackNext && !winner ? 'border-amber-500 bg-amber-50' : 'border-transparent bg-white'}`}>
+          <div className="order-2 flex flex-col gap-4 lg:order-1 lg:w-56">
+            <div
+              className={`rounded-2xl border-2 p-4 shadow-sm ${
+                game.isBlackNext && !game.winner ? "border-amber-500 bg-amber-50" : "border-transparent bg-white"
+              }`}
+            >
               <div className="flex items-center gap-3">
                 <div className="h-6 w-6 rounded-full bg-black shadow-md" />
-                <span className="font-bold text-gray-800">Black</span>
+                <div>
+                  <p className="font-bold text-gray-800">Black</p>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-gray-400">
+                    {isComputerMode ? "You" : "Player 1"}
+                  </p>
+                </div>
               </div>
-              {isBlackNext && !winner && <p className="mt-1 text-xs font-bold text-amber-600 uppercase">Your Turn</p>}
-            </div>
-            <div className={`rounded-2xl p-4 shadow-sm border-2 ${!isBlackNext && !winner ? 'border-amber-500 bg-amber-50' : 'border-transparent bg-white'}`}>
-              <div className="flex items-center gap-3">
-                <div className="h-6 w-6 rounded-full bg-white border border-gray-200 shadow-md" />
-                <span className="font-bold text-gray-800">White</span>
-              </div>
-              {!isBlackNext && !winner && <p className="mt-1 text-xs font-bold text-amber-600 uppercase">Your Turn</p>}
+              {game.isBlackNext && !game.winner && (
+                <p className="mt-1 text-xs font-bold uppercase text-amber-600">
+                  {isComputerMode ? "Your Turn" : "Current Turn"}
+                </p>
+              )}
             </div>
 
-            <div className="mt-4 flex flex-col gap-2">
+            <div
+              className={`rounded-2xl border-2 p-4 shadow-sm ${
+                !game.isBlackNext && !game.winner ? "border-amber-500 bg-amber-50" : "border-transparent bg-white"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className="h-6 w-6 rounded-full border border-gray-200 bg-white shadow-md" />
+                <div>
+                  <p className="font-bold text-gray-800">White</p>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-gray-400">
+                    {isComputerMode ? "Computer" : "Player 2"}
+                  </p>
+                </div>
+              </div>
+              {!game.isBlackNext && !game.winner && (
+                <p className="mt-1 text-xs font-bold uppercase text-amber-600">
+                  {isComputerMode ? "Thinking..." : "Current Turn"}
+                </p>
+              )}
+            </div>
+
+            <div className="rounded-2xl bg-white p-4 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-600">Mode Status</p>
+              <p className="mt-2 text-lg font-black text-gray-900">
+                {isComputerMode ? "Solo Challenge" : "Local Duel"}
+              </p>
+              <p className="mt-1 text-sm text-gray-500">
+                {game.winner
+                  ? "Round finished."
+                  : isComputerTurn
+                    ? `Computer is evaluating the board on ${DIFFICULTY_LABELS[difficulty]}.`
+                    : isComputerMode
+                      ? `Difficulty: ${DIFFICULTY_LABELS[difficulty]}.`
+                      : `${currentPlayer === "black" ? "Black" : "White"} to move.`}
+              </p>
+              {isComputerMode && (
+                <p className="mt-3 text-xs text-gray-400">
+                  Undo rewinds the full turn after the computer has answered.
+                </p>
+              )}
+            </div>
+
+            <div className="mt-1 flex flex-col gap-2">
               <button
                 onClick={undoMove}
-                disabled={history.length === 0 || !!winner}
-                className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-bold text-gray-700 shadow-sm border border-gray-200 transition hover:bg-gray-50 disabled:opacity-50 active:scale-95"
+                disabled={game.history.length === 0 || !!game.winner}
+                className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:opacity-50 active:scale-95"
               >
-                <span className="i-ph-arrow-u-up-left-bold" /> Undo
+                <span className="i-ph-arrow-u-up-left-bold" />
+                {isComputerMode ? "Undo Turn" : "Undo"}
               </button>
               <button
                 onClick={resetGame}
-                className="flex items-center justify-center gap-2 rounded-xl bg-amber-100 px-4 py-2 text-sm font-bold text-amber-700 shadow-sm border border-amber-200 transition hover:bg-amber-200 active:scale-95"
+                className="flex items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-100 px-4 py-2 text-sm font-bold text-amber-700 shadow-sm transition hover:bg-amber-200 active:scale-95"
               >
                 <span className="i-ph-arrows-clockwise-bold" /> Reset
               </button>
             </div>
           </div>
 
-          {/* Board Container */}
           <div className="order-1 flex w-full items-center justify-center px-2 lg:order-2">
-            <div className="relative w-full max-w-[600px] rounded-lg bg-[#e6b36e] p-2 shadow-2xl border-4 border-[#c99a5a] sm:p-4 sm:border-8">
-              <div 
+            <div className="relative w-full max-w-[600px] rounded-lg border-4 border-[#c99a5a] bg-[#e6b36e] p-2 shadow-2xl sm:border-8 sm:p-4">
+              {isComputerTurn && (
+                <div className="absolute right-3 top-3 z-20 flex items-center gap-2 rounded-full bg-white/90 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-amber-700 shadow-lg backdrop-blur-sm">
+                  <span className="i-ph-brain-duotone text-base" />
+                  Thinking
+                </div>
+              )}
+
+              <div
                 className="grid aspect-square w-full"
                 style={{
-                  gridTemplateColumns: `repeat(${BOARD_SIZE}, 1fr)`
+                  gridTemplateColumns: `repeat(${BOARD_SIZE}, 1fr)`,
                 }}
               >
-                {board.map((row, rIdx) => 
+                {game.board.map((row, rIdx) =>
                   row.map((cell, cIdx) => (
-                    <div 
+                    <div
                       key={`${rIdx}-${cIdx}`}
-                      className="relative flex items-center justify-center cursor-pointer group"
+                      className={`relative flex items-center justify-center ${
+                        canPlaceStone && !cell ? "cursor-pointer group" : "cursor-default"
+                      }`}
                       onClick={() => placeStone(rIdx, cIdx)}
                     >
-                      {/* Grid Lines */}
-                      <div className="absolute inset-0 pointer-events-none">
-                        {/* Horizontal Line */}
-                        <div className={`absolute top-1/2 left-0 right-0 h-0.5 bg-black/20 ${cIdx === 0 ? 'left-1/2' : ''} ${cIdx === BOARD_SIZE - 1 ? 'right-1/2' : ''}`} />
-                        {/* Vertical Line */}
-                        <div className={`absolute left-1/2 top-0 bottom-0 w-0.5 bg-black/20 ${rIdx === 0 ? 'top-1/2' : ''} ${rIdx === BOARD_SIZE - 1 ? 'bottom-1/2' : ''}`} />
+                      <div className="pointer-events-none absolute inset-0">
+                        <div
+                          className={`absolute left-0 right-0 top-1/2 h-0.5 bg-black/20 ${
+                            cIdx === 0 ? "left-1/2" : ""
+                          } ${cIdx === BOARD_SIZE - 1 ? "right-1/2" : ""}`}
+                        />
+                        <div
+                          className={`absolute bottom-0 top-0 left-1/2 w-0.5 bg-black/20 ${
+                            rIdx === 0 ? "top-1/2" : ""
+                          } ${rIdx === BOARD_SIZE - 1 ? "bottom-1/2" : ""}`}
+                        />
                       </div>
 
-                      {/* Small Dots (traditional Go board markings) */}
-                      {((rIdx === 3 || rIdx === 7 || rIdx === 11) && (cIdx === 3 || cIdx === 7 || cIdx === 11)) && (
-                        <div className="absolute h-1.5 w-1.5 rounded-full bg-black/40 z-0" />
+                      {(rIdx === 3 || rIdx === 7 || rIdx === 11) && (cIdx === 3 || cIdx === 7 || cIdx === 11) && (
+                        <div className="absolute z-0 h-1.5 w-1.5 rounded-full bg-black/40" />
                       )}
 
-                      {/* Hover Indicator */}
-                      {!cell && !winner && (
-                        <div className={`absolute h-4/5 w-4/5 rounded-full opacity-0 transition-opacity group-hover:opacity-30 ${isBlackNext ? 'bg-black' : 'bg-white'}`} />
+                      {!cell && canPlaceStone && (
+                        <div
+                          className={`absolute h-4/5 w-4/5 rounded-full opacity-0 transition-opacity group-hover:opacity-30 ${
+                            game.isBlackNext ? "bg-black" : "bg-white"
+                          }`}
+                        />
                       )}
 
-                      {/* Stone */}
                       {cell && (
-                        <div 
-                          className={`relative z-10 h-4/5 w-4/5 rounded-full shadow-lg transition-transform duration-300 scale-100 animate-in zoom-in-50 ${
-                            cell === 'black' 
-                              ? 'bg-gradient-to-br from-gray-700 to-black' 
-                              : 'bg-gradient-to-br from-gray-100 to-white border border-gray-200'
+                        <div
+                          className={`relative z-10 h-4/5 w-4/5 animate-in zoom-in-50 rounded-full shadow-lg transition-transform duration-300 ${
+                            cell === "black"
+                              ? "bg-gradient-to-br from-gray-700 to-black"
+                              : "border border-gray-200 bg-gradient-to-br from-gray-100 to-white"
                           }`}
                         />
                       )}
                     </div>
-                  ))
+                  )),
                 )}
               </div>
 
-              {/* Winner Overlay */}
-              {winner && (
-                <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/60 rounded-sm text-white backdrop-blur-sm animate-in fade-in duration-500">
-                  <div className={`mb-4 h-20 w-20 rounded-full shadow-2xl ${
-                    winner === 'black' ? 'bg-black' : winner === 'white' ? 'bg-white' : 'bg-gray-400'
-                  }`} />
-                  <h2 className="mb-2 text-4xl font-black italic tracking-tighter">
-                    {winner === 'draw' ? "IT'S A DRAW!" : `${winner.toUpperCase()} WINS!`}
+              {game.winner && (
+                <div className="animate-in fade-in absolute inset-0 z-20 flex flex-col items-center justify-center rounded-sm bg-black/60 text-white backdrop-blur-sm duration-500">
+                  <div
+                    className={`mb-4 h-20 w-20 rounded-full shadow-2xl ${
+                      game.winner === "black" ? "bg-black" : game.winner === "white" ? "bg-white" : "bg-gray-400"
+                    }`}
+                  />
+                  <h2 className="mb-2 text-center text-4xl font-black italic tracking-tighter">
+                    {getWinnerTitle(game.winner, gameMode)}
                   </h2>
-                  <p className="mb-8 text-lg text-gray-200 font-medium">Excellent game of strategy.</p>
+                  <p className="mb-8 text-center text-lg font-medium text-gray-200">
+                    {getWinnerSubtitle(game.winner, gameMode)}
+                  </p>
                   <button
                     onClick={resetGame}
                     className="rounded-xl bg-amber-500 px-8 py-3 font-bold text-white shadow-xl shadow-amber-500/30 transition hover:-translate-y-1 hover:bg-amber-600 active:scale-95"
