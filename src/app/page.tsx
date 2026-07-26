@@ -1,9 +1,9 @@
 import GameCard from "@/components/GameCard";
 import Container from "@/components/common/Container";
-import { getPublishedGames } from "@/games/registry";
+import { getPlayableGames } from "@/games/registry";
 
 export default function Home() {
-  const publishedGames = getPublishedGames();
+  const playableGames = getPlayableGames();
 
   return (
     <div className="py-12 sm:py-16">
@@ -19,7 +19,7 @@ export default function Home() {
         </header>
 
         <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {publishedGames.map((game) => (
+          {playableGames.map((game) => (
             <GameCard key={game.id} {...game} />
           ))}
         </div>

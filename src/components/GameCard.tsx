@@ -1,5 +1,7 @@
 import Link from 'next/link';
 
+import type { GameStatus } from '@/games/registry';
+
 interface GameCardProps {
   id: string;
   title: string;
@@ -7,9 +9,10 @@ interface GameCardProps {
   icon: string;
   href: string;
   color: string;
+  status: GameStatus;
 }
 
-export default function GameCard({ title, description, icon, href, color }: GameCardProps) {
+export default function GameCard({ title, description, icon, href, color, status }: GameCardProps) {
   return (
     <Link 
       href={href}
@@ -22,9 +25,16 @@ export default function GameCard({ title, description, icon, href, color }: Game
           <div className={`${icon} h-7 w-7 text-white`} />
         </div>
         
-        <h3 className="mb-2 text-xl font-bold text-gray-800 group-hover:text-gray-900">
-          {title}
-        </h3>
+        <div className="mb-2 flex items-center gap-2">
+          <h3 className="text-xl font-bold text-gray-800 group-hover:text-gray-900">
+            {title}
+          </h3>
+          {status === 'beta' && (
+            <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-bold uppercase tracking-wide text-amber-800">
+              Beta
+            </span>
+          )}
+        </div>
         
         <p className="text-sm text-gray-500 line-clamp-2">
           {description}

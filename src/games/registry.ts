@@ -1,5 +1,13 @@
 export type GameStatus = 'published' | 'beta' | 'planned';
 
+export interface QualityVerificationSummary {
+  result: 'passed' | 'failed';
+  baselineVersion: number;
+  revision: string;
+  verifiedAt: string;
+  record: string;
+}
+
 export interface GameDef {
   id: string;
   title: string;
@@ -8,6 +16,7 @@ export interface GameDef {
   href: string;
   color: string;
   status: GameStatus;
+  qualityVerification: QualityVerificationSummary | null;
 }
 
 export const GAME_REGISTRY: GameDef[] = [
@@ -19,6 +28,7 @@ export const GAME_REGISTRY: GameDef[] = [
     href: "/games/snake",
     color: "bg-green-500",
     status: 'published',
+    qualityVerification: null,
   },
   {
     id: "memory-match",
@@ -28,6 +38,7 @@ export const GAME_REGISTRY: GameDef[] = [
     href: "/games/memory-match",
     color: "bg-pink-500",
     status: 'published',
+    qualityVerification: null,
   },
   {
     id: "lights-out",
@@ -37,6 +48,7 @@ export const GAME_REGISTRY: GameDef[] = [
     href: "/games/lights-out",
     color: "bg-yellow-500",
     status: 'published',
+    qualityVerification: null,
   },
   {
     id: "tetris",
@@ -46,6 +58,7 @@ export const GAME_REGISTRY: GameDef[] = [
     href: "/games/tetris",
     color: "bg-purple-500",
     status: 'published',
+    qualityVerification: null,
   },
   {
     id: "gomoku",
@@ -55,6 +68,7 @@ export const GAME_REGISTRY: GameDef[] = [
     href: "/games/gomoku",
     color: "bg-amber-600",
     status: 'published',
+    qualityVerification: null,
   },
   {
     id: "sudoku",
@@ -64,6 +78,7 @@ export const GAME_REGISTRY: GameDef[] = [
     href: "/games/sudoku",
     color: "bg-blue-500",
     status: 'published',
+    qualityVerification: null,
   },
   {
     id: "zookeeper",
@@ -73,6 +88,17 @@ export const GAME_REGISTRY: GameDef[] = [
     href: "/games/zookeeper",
     color: "bg-emerald-500",
     status: 'published',
+    qualityVerification: null,
+  },
+  {
+    id: "puzzle-bobble",
+    title: "Puzzle Bobble",
+    description: "Aim, bounce, and match colorful bubbles before the descending ceiling reaches the cannon.",
+    icon: "i-ph-circles-three-duotone",
+    href: "/games/puzzle-bobble",
+    color: "bg-fuchsia-500",
+    status: 'beta',
+    qualityVerification: null,
   },
   {
     id: "kids-stair-rush",
@@ -82,6 +108,7 @@ export const GAME_REGISTRY: GameDef[] = [
     href: "/games/kids-stair-rush",
     color: "bg-sky-500",
     status: 'published',
+    qualityVerification: null,
   },
   {
     id: "farm",
@@ -91,6 +118,7 @@ export const GAME_REGISTRY: GameDef[] = [
     href: "/games/farm",
     color: "bg-green-600",
     status: 'published',
+    qualityVerification: null,
   },
   {
     id: "battleship-blitz",
@@ -100,6 +128,7 @@ export const GAME_REGISTRY: GameDef[] = [
     href: "/games/battleship-blitz",
     color: "bg-cyan-500",
     status: 'published',
+    qualityVerification: null,
   },
   {
     id: "fire-emblem",
@@ -109,6 +138,7 @@ export const GAME_REGISTRY: GameDef[] = [
     href: "/games/fire-emblem",
     color: "bg-rose-600",
     status: 'published',
+    qualityVerification: null,
   },
   {
     id: "babylon-rpg",
@@ -118,6 +148,7 @@ export const GAME_REGISTRY: GameDef[] = [
     href: "/games/babylon-rpg",
     color: "bg-cyan-600",
     status: "published",
+    qualityVerification: null,
   },
   {
     id: "2048",
@@ -127,6 +158,7 @@ export const GAME_REGISTRY: GameDef[] = [
     href: "/games/2048",
     color: "bg-orange-500",
     status: 'planned',
+    qualityVerification: null,
   },
   {
     id: "minesweeper",
@@ -136,6 +168,7 @@ export const GAME_REGISTRY: GameDef[] = [
     href: "/games/minesweeper",
     color: "bg-red-500",
     status: 'planned',
+    qualityVerification: null,
   },
   {
     id: "city-builder",
@@ -145,6 +178,7 @@ export const GAME_REGISTRY: GameDef[] = [
     href: "/games/city-builder",
     color: "bg-teal-500",
     status: 'published',
+    qualityVerification: null,
   },
   {
     id: "battle-city",
@@ -154,6 +188,7 @@ export const GAME_REGISTRY: GameDef[] = [
     href: "/games/battle-city",
     color: "bg-red-600",
     status: 'published',
+    qualityVerification: null,
   },
   {
     id: "ice-blocks",
@@ -163,6 +198,7 @@ export const GAME_REGISTRY: GameDef[] = [
     href: "/games/ice-blocks",
     color: "bg-sky-400",
     status: 'published',
+    qualityVerification: null,
   },
   {
     id: "monopoly",
@@ -172,6 +208,7 @@ export const GAME_REGISTRY: GameDef[] = [
     href: "/games/monopoly",
     color: "bg-indigo-500",
     status: 'published',
+    qualityVerification: null,
   },
   {
     id: "whack-a-mole",
@@ -181,6 +218,7 @@ export const GAME_REGISTRY: GameDef[] = [
     href: "/games/whack-a-mole",
     color: "bg-lime-600",
     status: 'published',
+    qualityVerification: null,
   },
   {
     id: "deep-sea-penguin",
@@ -190,8 +228,10 @@ export const GAME_REGISTRY: GameDef[] = [
     href: "/games/deep-sea-penguin",
     color: "bg-blue-600",
     status: 'published',
+    qualityVerification: null,
   },
 ];
 
 export const getPublishedGames = () => GAME_REGISTRY.filter(g => g.status === 'published');
-export const getPlannedGames = () => GAME_REGISTRY.filter(g => ['planned', 'beta'].includes(g.status));
+export const getPlayableGames = () => GAME_REGISTRY.filter(g => ['published', 'beta'].includes(g.status));
+export const getPlannedGames = () => GAME_REGISTRY.filter(g => g.status === 'planned');

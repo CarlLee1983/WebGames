@@ -20,7 +20,7 @@ export default function Container({
   };
 
   return (
-    <div className={`mx-auto w-full px-4 sm:px-6 lg:px-8 ${maxWidths[size]} ${className}`}>
+    <div className={`box-border mx-auto w-full px-4 sm:px-6 lg:px-8 ${maxWidths[size]} ${className}`}>
       {children}
     </div>
   );
