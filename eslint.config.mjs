@@ -15,6 +15,7 @@ const eslintConfig = defineConfig([
     ".worktree/**",
     "**/.worktree/**",
     "node_modules/**",
+    "public/games/babylon-rpg/runtime.js",
   ]),
 ]);
 

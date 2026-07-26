@@ -13,6 +13,12 @@ export type BuildingType =
 
 export type ToolMode = BuildingType | 'bulldoze';
 export type GameSpeed = 'paused' | 'normal' | 'fast';
+export type CoverageBuildingType = 'power_plant' | 'water_pump' | 'park';
+
+export interface GridPoint {
+  col: number;
+  row: number;
+}
 
 export interface CityCell {
   type: BuildingType;
@@ -131,6 +137,33 @@ export const GRID_COLS = 30;
 export const GRID_ROWS = 20;
 export const CELL_SIZE = 32;
 
+const COVERAGE_RANGES: Record<CoverageBuildingType, number> = {
+  power_plant: 5,
+  water_pump: 4,
+  park: 2,
+};
+
+export function getCoverageCells(type: ToolMode, col: number, row: number): GridPoint[] {
+  if (type === 'bulldoze' || type === 'empty' || type === 'road' || type === 'residential' || type === 'commercial' || type === 'industrial') {
+    return [];
+  }
+
+  const range = COVERAGE_RANGES[type];
+  const cells: GridPoint[] = [];
+  for (let nextRow = row - range; nextRow <= row + range; nextRow++) {
+    for (let nextCol = col - range; nextCol <= col + range; nextCol++) {
+      if (nextCol < 0 || nextCol >= GRID_COLS || nextRow < 0 || nextRow >= GRID_ROWS) continue;
+      const deltaCol = nextCol - col;
+      const deltaRow = nextRow - row;
+      const isCovered = type === 'park'
+        ? Math.max(Math.abs(deltaCol), Math.abs(deltaRow)) <= range
+        : Math.hypot(deltaCol, deltaRow) <= range;
+      if (isCovered) cells.push({ col: nextCol, row: nextRow });
+    }
+  }
+  return cells;
+}
+
 /**
  * 初始化遊戲狀態
  */
@@ -180,6 +213,10 @@ export function canPlace(
   row: number,
   type: BuildingType
 ): boolean {
+  if (type === 'empty') {
+    return false;
+  }
+
   // 邊界檢查
   if (col < 0 || col >= GRID_COLS || row < 0 || row >= GRID_ROWS) {
     return false;
@@ -199,6 +236,19 @@ export function canPlace(
   }
 
   return true;
+}
+
+export function getPlacementError(
+  state: CityState,
+  col: number,
+  row: number,
+  type: BuildingType
+): string | null {
+  if (type === 'empty') return '請先選擇一種可建造設施';
+  if (col < 0 || col >= GRID_COLS || row < 0 || row >= GRID_ROWS) return '這塊地超出城市範圍';
+  if (state.grid[row][col].type !== 'empty') return '這塊地已有設施，請先拆除';
+  if (state.money < BUILDING_DEFS[type].cost) return `資金不足，還需要 $${BUILDING_DEFS[type].cost - state.money}`;
+  return null;
 }
 
 /**
@@ -235,12 +285,12 @@ export function placeBuilding(
     timestamp: state.tick,
   };
 
-  return {
+  return refreshCityServices({
     ...state,
     grid: newGrid,
     money: state.money - cost,
     notifications: [...state.notifications, notification],
-  };
+  });
 }
 
 /**
@@ -270,73 +320,45 @@ export function bulldoze(state: CityState, col: number, row: number): CityState 
     placedAt: 0,
   };
 
-  return {
+  return refreshCityServices({
     ...state,
     grid: newGrid,
     money: state.money + refund,
-  };
+    notifications: [
+      ...state.notifications,
+      {
+        id: `bulldoze-${state.tick}-${col}-${row}`,
+        message: `${BUILDING_DEFS[cell.type].name}已拆除，回收 $${refund}`,
+        type: 'info',
+        timestamp: state.tick,
+      },
+    ],
+  });
 }
 
 /**
- * BFS 計算道路連通性
+ * 計算道路可達性
  */
 function computeRoadConnectivity(grid: CityCell[][]): boolean[][] {
   const connected = Array(GRID_ROWS)
     .fill(null)
     .map(() => Array(GRID_COLS).fill(false));
 
-  // 尋找任一道路作為起點
-  let startCol = -1,
-    startRow = -1;
   for (let r = 0; r < GRID_ROWS; r++) {
     for (let c = 0; c < GRID_COLS; c++) {
       if (grid[r][c].type === 'road') {
-        startCol = c;
-        startRow = r;
-        break;
+        connected[r][c] = true;
       }
     }
-    if (startCol !== -1) break;
   }
 
-  // 如果沒有道路，返回全 false
-  if (startCol === -1) {
-    return connected;
-  }
-
-  // BFS 標記所有連接的道路和相鄰建築
-  const queue: [number, number][] = [[startCol, startRow]];
-  connected[startRow][startCol] = true;
-
-  while (queue.length > 0) {
-    const [c, r] = queue.shift()!;
-
-    // 檢查四個方向
-    const dirs = [
-      [c + 1, r],
-      [c - 1, r],
-      [c, r + 1],
-      [c, r - 1],
-    ];
-
-    for (const [nc, nr] of dirs) {
-      if (
-        nc >= 0 &&
-        nc < GRID_COLS &&
-        nr >= 0 &&
-        nr < GRID_ROWS &&
-        !connected[nr][nc]
-      ) {
-        const neighborCell = grid[nr][nc];
-
-        // 道路或相鄰道路的非空建築標記為連接
-        if (neighborCell.type === 'road' || neighborCell.type !== 'empty') {
-          connected[nr][nc] = true;
-
-          if (neighborCell.type === 'road') {
-            queue.push([nc, nr]);
-          }
-        }
+  // 這個沙盒沒有固定城市入口；任何直接鄰接道路的建築都視為可達。
+  for (let r = 0; r < GRID_ROWS; r++) {
+    for (let c = 0; c < GRID_COLS; c++) {
+      if (grid[r][c].type === 'empty' || grid[r][c].type === 'road') continue;
+      const neighbors = [[c + 1, r], [c - 1, r], [c, r + 1], [c, r - 1]];
+      if (neighbors.some(([nc, nr]) => nr >= 0 && nr < GRID_ROWS && nc >= 0 && nc < GRID_COLS && grid[nr][nc].type === 'road')) {
+        connected[r][c] = true;
       }
     }
   }
@@ -352,24 +374,12 @@ function computePowerCoverage(grid: CityCell[][]): boolean[][] {
     .fill(null)
     .map(() => Array(GRID_COLS).fill(false));
 
-  const POWER_RANGE = 5;
-
   for (let r = 0; r < GRID_ROWS; r++) {
     for (let c = 0; c < GRID_COLS; c++) {
       if (grid[r][c].type === 'power_plant') {
-        // 標記該電廠的覆蓋範圍
-        for (let dr = -POWER_RANGE; dr <= POWER_RANGE; dr++) {
-          for (let dc = -POWER_RANGE; dc <= POWER_RANGE; dc++) {
-            const nr = r + dr;
-            const nc = c + dc;
-            if (nr >= 0 && nr < GRID_ROWS && nc >= 0 && nc < GRID_COLS) {
-              const dist = Math.sqrt(dr * dr + dc * dc);
-              if (dist <= POWER_RANGE) {
-                powered[nr][nc] = true;
-              }
-            }
-          }
-        }
+        getCoverageCells('power_plant', c, r).forEach(({ col, row }) => {
+          powered[row][col] = true;
+        });
       }
     }
   }
@@ -385,24 +395,12 @@ function computeWaterCoverage(grid: CityCell[][]): boolean[][] {
     .fill(null)
     .map(() => Array(GRID_COLS).fill(false));
 
-  const WATER_RANGE = 4;
-
   for (let r = 0; r < GRID_ROWS; r++) {
     for (let c = 0; c < GRID_COLS; c++) {
       if (grid[r][c].type === 'water_pump') {
-        // 標記該水泵的覆蓋範圍
-        for (let dr = -WATER_RANGE; dr <= WATER_RANGE; dr++) {
-          for (let dc = -WATER_RANGE; dc <= WATER_RANGE; dc++) {
-            const nr = r + dr;
-            const nc = c + dc;
-            if (nr >= 0 && nr < GRID_ROWS && nc >= 0 && nc < GRID_COLS) {
-              const dist = Math.sqrt(dr * dr + dc * dc);
-              if (dist <= WATER_RANGE) {
-                hasWater[nr][nc] = true;
-              }
-            }
-          }
-        }
+        getCoverageCells('water_pump', c, r).forEach(({ col, row }) => {
+          hasWater[row][col] = true;
+        });
       }
     }
   }
@@ -505,23 +503,25 @@ function computeFinance(state: CityState): {
     for (let c = 0; c < GRID_COLS; c++) {
       const cell = state.grid[r][c];
 
-      // 商業區收入
+      const active = cell.connectedToRoad && cell.powered && cell.hasWater;
+
+      // 正常營運的商業與工業提供穩定稅收。
       if (cell.type === 'commercial') {
-        income += Math.floor(cell.population * 0.5);
+        if (active) income += 45;
         powerUsage += 4;
         waterUsage += 1;
       }
 
       // 工業區收入
       if (cell.type === 'industrial') {
-        income += Math.floor(cell.population * 0.8);
+        if (active) income += 80;
         powerUsage += 6;
         waterUsage += 3;
       }
 
       // 住宅區維護費
       if (cell.type === 'residential') {
-        expenses += Math.floor(cell.population * 0.2);
+        expenses += Math.floor(cell.population * 0.1);
         powerUsage += 2;
         waterUsage += 2;
       }
@@ -546,6 +546,38 @@ function computeFinance(state: CityState): {
   return { income, expenses, powerUsage, waterUsage };
 }
 
+export function refreshCityServices(state: CityState): CityState {
+  const roadConnected = computeRoadConnectivity(state.grid);
+  const powered = computePowerCoverage(state.grid);
+  const hasWater = computeWaterCoverage(state.grid);
+  const grid = state.grid.map((row, rowIndex) =>
+    row.map((cell, colIndex) => ({
+      ...cell,
+      powered: powered[rowIndex][colIndex],
+      hasWater: hasWater[rowIndex][colIndex],
+      connectedToRoad: roadConnected[rowIndex][colIndex] || cell.type === 'road',
+    }))
+  );
+  const finance = computeFinance({ ...state, grid });
+  let power = 0;
+  let water = 0;
+  grid.forEach((row) => row.forEach((cell) => {
+    if (cell.type === 'power_plant') power += 200;
+    if (cell.type === 'water_pump') water += 150;
+  }));
+
+  return {
+    ...state,
+    grid,
+    power,
+    water,
+    powerUsage: finance.powerUsage,
+    waterUsage: finance.waterUsage,
+    income: finance.income,
+    expenses: finance.expenses,
+  };
+}
+
 /**
  * 主模擬步驟（每個 tick 調用一次）
  */
@@ -554,22 +586,8 @@ export function simulateTick(state: CityState): CityState {
     return state;
   }
 
-  let newGrid = state.grid.map((r) => [...r]);
-
-  // 計算道路連通性
-  const roadConnected = computeRoadConnectivity(newGrid);
-  const powered = computePowerCoverage(newGrid);
-  const hasWater = computeWaterCoverage(newGrid);
-
-  // 更新每個格子的狀態
-  newGrid = newGrid.map((row, r) =>
-    row.map((cell, c) => ({
-      ...cell,
-      powered: powered[r][c],
-      hasWater: hasWater[r][c],
-      connectedToRoad: roadConnected[r][c] || cell.type === 'road',
-    }))
-  );
+  const serviced = refreshCityServices(state);
+  let newGrid = serviced.grid;
 
   // 計算人口
   newGrid = computePopulation(newGrid);
@@ -597,29 +615,17 @@ export function simulateTick(state: CityState): CityState {
 
   avgHappiness = populationCount > 0 ? avgHappiness / populationCount : 50;
 
-  // 計算電力生產
-  let totalPower = 0;
-  for (let r = 0; r < GRID_ROWS; r++) {
-    for (let c = 0; c < GRID_COLS; c++) {
-      if (newGrid[r][c].type === 'power_plant') {
-        totalPower += 200; // 每個電廠產200電力
-      }
-    }
-  }
-
-  // 計算水資源生產
-  let totalWater = 0;
-  for (let r = 0; r < GRID_ROWS; r++) {
-    for (let c = 0; c < GRID_COLS; c++) {
-      if (newGrid[r][c].type === 'water_pump') {
-        totalWater += 150; // 每個水泵產150水
-      }
-    }
-  }
-
   const newMoney = state.money + finance.income - finance.expenses;
   const newTick = state.tick + 1;
   const newDay = Math.floor(newTick / 20) + 1; // 20 ticks per day
+
+  const notifications = state.notifications.filter((n) => newTick - n.timestamp < 100);
+  if (state.population < 50 && totalPopulation >= 50) {
+    notifications.push({ id: `milestone-50-${newTick}`, message: '里程碑：城市人口突破 50！', type: 'success', timestamp: newTick });
+  }
+  if (state.money >= 0 && newMoney < 0) {
+    notifications.push({ id: `deficit-${newTick}`, message: '市庫已進入赤字，請增加收入或拆除高維護設施', type: 'warning', timestamp: newTick });
+  }
 
   return {
     ...state,
@@ -627,16 +633,64 @@ export function simulateTick(state: CityState): CityState {
     money: newMoney,
     population: totalPopulation,
     happiness: Math.round(avgHappiness),
-    power: totalPower,
+    power: serviced.power,
     powerUsage: finance.powerUsage,
-    water: totalWater,
+    water: serviced.water,
     waterUsage: finance.waterUsage,
     income: finance.income,
     expenses: finance.expenses,
     tick: newTick,
     day: newDay,
-    notifications: state.notifications.filter((n) => newTick - n.timestamp < 100), // 清理舊通知
+    notifications,
   };
+}
+
+export function getCityRank(state: CityState): { name: string; nextPopulation: number | null } {
+  if (state.population >= 500) return { name: 'Metropolis', nextPopulation: null };
+  if (state.population >= 250) return { name: 'City', nextPopulation: 500 };
+  if (state.population >= 100) return { name: 'Town', nextPopulation: 250 };
+  if (state.population >= 25) return { name: 'Village', nextPopulation: 100 };
+  return { name: 'Settlement', nextPopulation: 25 };
+}
+
+export function parseCityState(value: unknown): CityState | null {
+  if (!value || typeof value !== 'object') return null;
+  const state = value as Partial<CityState>;
+  const buildingTypes = new Set(Object.keys(BUILDING_DEFS));
+  const isValidCell = (cell: unknown): cell is CityCell => {
+    if (!cell || typeof cell !== 'object') return false;
+    const candidate = cell as Partial<CityCell>;
+    return typeof candidate.type === 'string'
+      && buildingTypes.has(candidate.type)
+      && Number.isFinite(candidate.level)
+      && Number.isFinite(candidate.population)
+      && Number.isFinite(candidate.happiness)
+      && Number.isFinite(candidate.placedAt)
+      && typeof candidate.powered === 'boolean'
+      && typeof candidate.hasWater === 'boolean'
+      && typeof candidate.connectedToRoad === 'boolean';
+  };
+  const validGrid = Array.isArray(state.grid)
+    && state.grid.length === GRID_ROWS
+    && state.grid.every((row) => Array.isArray(row)
+      && row.length === GRID_COLS
+      && row.every(isValidCell));
+  const validNumbers = ['money', 'population', 'power', 'powerUsage', 'water', 'waterUsage', 'happiness', 'tick', 'day', 'income', 'expenses']
+    .every((key) => Number.isFinite(state[key as keyof CityState]));
+  const validTool = typeof state.selectedTool === 'string'
+    && (state.selectedTool === 'bulldoze'
+      || (state.selectedTool !== 'empty' && buildingTypes.has(state.selectedTool)));
+  const validSpeed = state.gameSpeed === 'paused' || state.gameSpeed === 'normal' || state.gameSpeed === 'fast';
+  const validNotifications = Array.isArray(state.notifications)
+    && state.notifications.every((notification) => notification
+      && typeof notification.id === 'string'
+      && typeof notification.message === 'string'
+      && (notification.type === 'info' || notification.type === 'warning' || notification.type === 'success')
+      && Number.isFinite(notification.timestamp));
+
+  return validGrid && validNumbers && validTool && validSpeed && validNotifications
+    ? state as CityState
+    : null;
 }
 
 /**
@@ -657,7 +711,7 @@ export function loadCityState(): CityState | null {
   try {
     const saved = localStorage.getItem('cityBuilder_state');
     if (saved) {
-      return JSON.parse(saved);
+      return parseCityState(JSON.parse(saved));
     }
   } catch (e) {
     console.error('Failed to load city state:', e);

@@ -1,7 +1,20 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Engine as MatterEngine, IEventCollision } from 'matter-js';
 import Container from '@/components/common/Container';
+import {
+  GameState,
+  ItemType,
+  calculateCrushPoints,
+  createInitialGameState,
+  getSpawnRate,
+  getStackPreview,
+  isInsideBucketCaptureZone,
+  loseLife,
+  renderGameToText,
+  selectItemType,
+} from './utils';
 
 declare global {
   interface Window {
@@ -10,24 +23,17 @@ declare global {
   }
 }
 
-interface GameState {
-  mode: 'start' | 'playing' | 'gameOver';
-  score: number;
-  lives: number;
-  highScore: number;
-  message: { text: string; color: string; life: number; x: number; y: number } | null;
-}
-
-type ItemType = 'ice' | 'gold' | 'fire';
-
 interface BodyData {
-  id: string;
+  id: number;
   itemType: ItemType;
-  size?: number;
+  width?: number;
+  height?: number;
   radius?: number;
   color: string;
   rotation: number;
 }
+
+type MatterApi = typeof import('matter-js');
 
 interface Particle {
   x: number;
@@ -55,7 +61,7 @@ const BUCKET_WIDTH = 150;     // 加寬一點確保能接
 const BUCKET_HEIGHT = 100;    // ★ 牆壁加高，讓冰塊不會因為慣性輕易滑出去
 const BUCKET_THICKNESS = 16;
 const GRAVITY = 1.5;          // ★ 提高重力，讓冰塊更扎實往下沉
-const SPAWN_RATE = 100; // 基礎生成速率
+const MAX_PHYSICS_STEP_MS = 1000 / 60;
 const ICE_COLORS = ['#87CEEB', '#E0F6FF', '#7DF9FF', '#00FFFF', '#1E90FF', '#00BFFF'];
 
 function drawRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -72,43 +78,87 @@ function drawRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: n
 
 export default function IceBlocksGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const engineRef = useRef<any>(null);
-  const bodiesRef = useRef<Map<string, BodyData>>(new Map());
+  const engineRef = useRef<MatterEngine | null>(null);
+  const bodiesRef = useRef<Map<number, BodyData>>(new Map());
   const particlesRef = useRef<Particle[]>([]);
   const snowflakesRef = useRef<Snowflake[]>([]);
   
-  const [uiState, setUiState] = useState<GameState>({
-    mode: 'start',
-    score: 0,
-    lives: 3,
-    highScore: 0,
-    message: null,
-  });
+  const [uiState, setUiState] = useState<GameState>(createInitialGameState);
   const uiStateRef = useRef<GameState>(uiState);
 
-  const updateUiState = (updates: Partial<GameState>) => {
+  const updateUiState = useCallback((updates: Partial<GameState>) => {
     const newState = { ...uiStateRef.current, ...updates };
     uiStateRef.current = newState;
     setUiState(newState);
-  };
+  }, []);
 
-  const showMessage = (text: string, color: string, x: number, y: number) => {
+  const showMessage = useCallback((text: string, color: string, x: number, y: number) => {
     updateUiState({ message: { text, color, x, y, life: 60 } }); // 60 frames
-  };
+  }, [updateUiState]);
 
   const bucketRef = useRef({ x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT - 40 });
   const keysPressed = useRef<Record<string, boolean>>({});
   const mousePosRef = useRef({ x: CANVAS_WIDTH / 2 });
   const spawnTimerRef = useRef(0);
-  const matterRef = useRef<any>(null);
+  const matterRef = useRef<MatterApi | null>(null);
   const crushRequestedRef = useRef(false);
 
+  const handleFireballExplosion = useCallback((x: number, y: number) => {
+    const nextState = {
+      ...loseLife(uiStateRef.current),
+      stack: getStackPreview([]),
+    };
+    updateUiState(nextState);
+
+    if (nextState.mode !== 'gameOver') {
+      showMessage('-1 LIFE. BUCKET CLEARED!', '#ef4444', x, y - 40);
+
+      const engine = engineRef.current;
+      const matter = matterRef.current;
+      if (engine && matter) {
+        bodiesRef.current.forEach((bodyData, id) => {
+          if (bodyData.itemType === 'fire') return;
+          const matterBody = engine.world.bodies.find((body) => body.id === id);
+          if (matterBody && isInsideBucketCaptureZone(
+            matterBody.position.x,
+            matterBody.position.y,
+            bucketRef.current.x,
+            bucketRef.current.y,
+            BUCKET_WIDTH,
+            BUCKET_HEIGHT,
+            BUCKET_THICKNESS,
+          )) {
+            matter.World.remove(engine.world, matterBody);
+            bodiesRef.current.delete(id);
+          }
+        });
+      }
+    }
+
+    for (let i = 0; i < 40; i++) {
+      particlesRef.current.push({
+        x,
+        y,
+        vx: (Math.random() - 0.5) * 15,
+        vy: (Math.random() - 0.5) * 15,
+        life: 1,
+        maxLife: Math.random() * 30 + 10,
+        color: Math.random() > 0.5 ? '#ef4444' : '#f59e0b',
+        size: Math.random() * 6 + 2,
+      });
+    }
+  }, [showMessage, updateUiState]);
+
   useEffect(() => {
-    import('matter-js').then((MatterModule) => {
+    let disposed = false;
+    let cleanup = () => undefined;
+
+    void import('matter-js').then((MatterModule) => {
+      if (disposed) return;
       const { Engine, World, Body, Bodies, Events } = MatterModule;
       const engine = Engine.create();
       engineRef.current = engine;
-      matterRef.current = { Engine, World, Body, Bodies, Events };
+      matterRef.current = MatterModule;
       engine.world.gravity.y = GRAVITY;
 
       const leftWall = Bodies.rectangle(-50, CANVAS_HEIGHT / 2, 100, CANVAS_HEIGHT + 1000, {
@@ -137,10 +187,10 @@ export default function IceBlocksGame() {
 
       World.add(engine.world, [leftWall, rightWall, bucket]);
 
-      Events.on(engine, 'collisionStart', (event: any) => {
-        event.pairs.forEach((pair: any) => {
-          let bodyA = pair.bodyA;
-          let bodyB = pair.bodyB;
+      const handleCollision = (event: IEventCollision<MatterEngine>) => {
+        event.pairs.forEach((pair) => {
+          const bodyA = pair.bodyA;
+          const bodyB = pair.bodyB;
 
           // 火球砸到桶子底部或接到桶子裡
           const isFireA = (bodyA.label as string || '').startsWith('fire-');
@@ -149,11 +199,14 @@ export default function IceBlocksGame() {
           const isBucketPartB = bodyB.label && bodyB.label.startsWith('bucket');
           
           if ((isFireA && isBucketPartB) || (isFireB && isBucketPartA)) {
-            const fireBodyId = isFireA ? bodyA.id_string : bodyB.id_string;
-            if (fireBodyId && bodiesRef.current.has(fireBodyId)) {
-              handleFireballExplosion(xPos(bodyA, bodyB), yPos(bodyA, bodyB));
-              World.remove(engine.world, isFireA ? bodyA : bodyB);
-              bodiesRef.current.delete(fireBodyId);
+            const fireBody = isFireA ? bodyA : bodyB;
+            if (bodiesRef.current.has(fireBody.id)) {
+              handleFireballExplosion(
+                (bodyA.position.x + bodyB.position.x) / 2,
+                (bodyA.position.y + bodyB.position.y) / 2,
+              );
+              World.remove(engine.world, fireBody);
+              bodiesRef.current.delete(fireBody.id);
             }
           }
 
@@ -180,102 +233,93 @@ export default function IceBlocksGame() {
             }
           }
         });
-      });
+      };
+      Events.on(engine, 'collisionStart', handleCollision);
 
-      const handleKeyDown = (e: KeyboardEvent) => { 
+      const handleKeyDown = (e: KeyboardEvent) => {
+        const target = e.target as HTMLElement | null;
+        if (target?.closest('button, a, input, textarea, select')) return;
         keysPressed.current[e.key.toLowerCase()] = true; 
         if (e.code === 'Space' && uiStateRef.current.mode === 'playing') {
           crushRequestedRef.current = true;
           e.preventDefault();
+        } else if (e.key.toLowerCase() === 'p' && !e.repeat) {
+          const mode = uiStateRef.current.mode;
+          if (mode === 'playing' || mode === 'paused') {
+            updateUiState({ mode: mode === 'playing' ? 'paused' : 'playing' });
+          }
         }
       };
       const handleKeyUp = (e: KeyboardEvent) => { keysPressed.current[e.key.toLowerCase()] = false; };
-      const handleMouseMove = (e: MouseEvent) => {
-        if (canvasRef.current) {
-          const rect = canvasRef.current.getBoundingClientRect();
-          mousePosRef.current.x = ((e.clientX - rect.left) / rect.width) * CANVAS_WIDTH;
-        }
+      const handlePointerMove = (e: PointerEvent) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        mousePosRef.current.x = ((e.clientX - rect.left) / rect.width) * CANVAS_WIDTH;
       };
-      const handleMouseDown = (e: MouseEvent) => {
-        if (uiStateRef.current.mode === 'playing') {
+      const handlePointerDown = (e: PointerEvent) => {
+        handlePointerMove(e);
+        canvasRef.current?.focus();
+        if (e.pointerType === 'mouse' && uiStateRef.current.mode === 'playing') {
           crushRequestedRef.current = true;
-        }
-      }
-      const handleTouchMove = (e: TouchEvent) => {
-        if (canvasRef.current && e.touches.length > 0) {
-          const rect = canvasRef.current.getBoundingClientRect();
-          mousePosRef.current.x = ((e.touches[0].clientX - rect.left) / rect.width) * CANVAS_WIDTH;
-          e.preventDefault();
         }
       };
 
       window.addEventListener('keydown', handleKeyDown);
       window.addEventListener('keyup', handleKeyUp);
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mousedown', handleMouseDown);
-      window.addEventListener('touchmove', handleTouchMove, { passive: false });
+      const canvas = canvasRef.current;
+      canvas?.addEventListener('pointermove', handlePointerMove);
+      canvas?.addEventListener('pointerdown', handlePointerDown);
 
-      window.render_game_to_text = () => JSON.stringify(uiStateRef.current);
-      window.advanceTime = (ms: number) => { Engine.update(engine, ms); };
+      window.render_game_to_text = () => renderGameToText(
+        uiStateRef.current,
+        bucketRef.current.x,
+        Array.from(bodiesRef.current.values(), (body) => body.itemType),
+      );
+      window.advanceTime = (ms: number) => {
+        let remaining = Math.max(0, ms);
+        while (remaining > 0) {
+          const step = Math.min(remaining, MAX_PHYSICS_STEP_MS);
+          Engine.update(engine, step);
+          remaining -= step;
+        }
+      };
 
-      return () => {
+      cleanup = () => {
         window.removeEventListener('keydown', handleKeyDown);
         window.removeEventListener('keyup', handleKeyUp);
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('mousedown', handleMouseDown);
-        window.removeEventListener('touchmove', handleTouchMove);
+        canvas?.removeEventListener('pointermove', handlePointerMove);
+        canvas?.removeEventListener('pointerdown', handlePointerDown);
+        Events.off(engine, 'collisionStart', handleCollision);
+        World.clear(engine.world, false);
+        Engine.clear(engine);
+        if (engineRef.current === engine) engineRef.current = null;
+        if (matterRef.current === MatterModule) matterRef.current = null;
+        delete window.render_game_to_text;
+        delete window.advanceTime;
       };
     });
-  }, []);
-
-  const xPos = (a: any, b: any) => (a.position.x + b.position.x) / 2;
-  const yPos = (a: any, b: any) => (a.position.y + b.position.y) / 2;
-
-  const handleFireballExplosion = (x: number, y: number) => {
-    // 扣除生命
-    const state = uiStateRef.current;
-    if (state.lives - 1 <= 0) {
-      updateUiState({ mode: 'gameOver', highScore: Math.max(state.score, state.highScore) });
-    } else {
-      updateUiState({ lives: state.lives - 1 });
-      showMessage("-1 LIFE. BUCKET CLEARED!", "#ef4444", x, y - 40);
-      
-      // 炸彈會將桶內所有物品蒸發
-      const engine = engineRef.current;
-      const matter = matterRef.current;
-      if (engine && matter) {
-        bodiesRef.current.forEach((bodyData, id) => {
-           if (bodyData.itemType === 'ice' || bodyData.itemType === 'gold') {
-             const matterBody = engine.world.bodies.find((b: any) => (b as any).id_string === id);
-             if (matterBody && matterBody.position.y > bucketRef.current.y - BUCKET_HEIGHT) {
-                matter.World.remove(engine.world, matterBody);
-                bodiesRef.current.delete(id);
-             }
-           }
-        });
-      }
-    }
-
-    // 火焰粒子特效
-    for (let i = 0; i < 40; i++) {
-      particlesRef.current.push({
-        x, y,
-        vx: (Math.random() - 0.5) * 15,
-        vy: (Math.random() - 0.5) * 15,
-        life: 1,
-        maxLife: Math.random() * 30 + 10,
-        color: Math.random() > 0.5 ? '#ef4444' : '#f59e0b',
-        size: Math.random() * 6 + 2
-      });
-    }
-  };
+    return () => {
+      disposed = true;
+      cleanup();
+    };
+  }, [handleFireballExplosion, updateUiState]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const pixelRatio = Math.min(2, window.devicePixelRatio || 1);
+    const targetWidth = Math.round(CANVAS_WIDTH * pixelRatio);
+    const targetHeight = Math.round(CANVAS_HEIGHT * pixelRatio);
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+    }
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
 
+    snowflakesRef.current = [];
     for (let i = 0; i < 40; i++) {
       snowflakesRef.current.push({
         x: Math.random() * CANVAS_WIDTH,
@@ -307,7 +351,7 @@ export default function IceBlocksGame() {
       const { Engine, World, Body, Bodies } = matter;
 
       // ====== 狀態更新 ======
-      if (state.message) {
+      if (state.message && state.mode !== 'paused') {
         state.message.life -= (deltaTime / 16);
         state.message.y -= 0.5;
         if (state.message.life <= 0) {
@@ -315,35 +359,34 @@ export default function IceBlocksGame() {
         }
       }
 
-      // ====== 平台 (Bucket) 移動邏輯 ======
-      const platformSpeed = 10 * (deltaTime / 16.67);
-      let targetX = bucketRef.current.x;
+      if (state.mode === 'playing') {
+        // ====== 平台 (Bucket) 移動邏輯 ======
+        const platformSpeed = 10 * (deltaTime / 16.67);
+        let targetX = bucketRef.current.x;
 
-      if (keysPressed.current['a'] || keysPressed.current['arrowleft']) {
-        targetX -= platformSpeed;
-      } else if (keysPressed.current['d'] || keysPressed.current['arrowright']) {
-        targetX += platformSpeed;
-      } else {
-        targetX = Math.max(BUCKET_WIDTH / 2, Math.min(CANVAS_WIDTH - BUCKET_WIDTH / 2, mousePosRef.current.x));
-      }
-      targetX = Math.max(BUCKET_WIDTH / 2, Math.min(CANVAS_WIDTH - BUCKET_WIDTH / 2, targetX));
-      
-      const prevX = bucketRef.current.x;
-      bucketRef.current.x += (targetX - bucketRef.current.x) * 0.35;
-      const dx = bucketRef.current.x - prevX;
+        if (keysPressed.current['a'] || keysPressed.current['arrowleft']) {
+          targetX -= platformSpeed;
+        } else if (keysPressed.current['d'] || keysPressed.current['arrowright']) {
+          targetX += platformSpeed;
+        } else {
+          targetX = Math.max(BUCKET_WIDTH / 2, Math.min(CANVAS_WIDTH - BUCKET_WIDTH / 2, mousePosRef.current.x));
+        }
+        targetX = Math.max(BUCKET_WIDTH / 2, Math.min(CANVAS_WIDTH - BUCKET_WIDTH / 2, targetX));
 
-      const bucket = engine.world.bodies.find((b: any) => b.label === 'bucket');
-      if (bucket) {
-        Body.setPosition(bucket, {
-          x: bucketRef.current.x,
-          y: bucketRef.current.y,
-        });
-        
-        // ★ 限制物理推力的上限，避免滑鼠瞬間移動時將冰塊像棒球一樣擊飛
-        let velX = dx * (16.67 / deltaTime);
-        velX = Math.max(-25, Math.min(25, velX));
+        const prevX = bucketRef.current.x;
+        bucketRef.current.x += (targetX - bucketRef.current.x) * 0.35;
+        const dx = bucketRef.current.x - prevX;
 
-        Body.setVelocity(bucket, { x: velX, y: 0 });
+        const bucket = engine.world.bodies.find((body) => body.label === 'bucket');
+        if (bucket) {
+          Body.setPosition(bucket, {
+            x: bucketRef.current.x,
+            y: bucketRef.current.y,
+          });
+
+          const velocity = Math.max(-25, Math.min(25, dx * (16.67 / deltaTime)));
+          Body.setVelocity(bucket, { x: velocity, y: 0 });
+        }
       }
 
       // ====== 遊戲邏輯 ======
@@ -354,11 +397,19 @@ export default function IceBlocksGame() {
           crushRequestedRef.current = false;
           let blocksInBucket = 0;
           let goldCount = 0;
-          const bodiesToRemove: string[] = [];
+          const bodiesToRemove: number[] = [];
           
           bodiesRef.current.forEach((bodyData, id) => {
-            const matterBody = engine.world.bodies.find((b: any) => (b as any).id_string === id);
-            if (matterBody && matterBody.position.y > bucketRef.current.y - BUCKET_HEIGHT - 30) {
+            const matterBody = engine.world.bodies.find((body) => body.id === id);
+            if (matterBody && isInsideBucketCaptureZone(
+              matterBody.position.x,
+              matterBody.position.y,
+              bucketRef.current.x,
+              bucketRef.current.y,
+              BUCKET_WIDTH,
+              BUCKET_HEIGHT,
+              BUCKET_THICKNESS,
+            )) {
               if (bodyData.itemType === 'fire') return; // 火球不能被 Crush，必須躲掉
               
               blocksInBucket++;
@@ -381,12 +432,12 @@ export default function IceBlocksGame() {
           if (blocksInBucket > 0) {
              // 結算公式：純數量指數加成 + 金塊獎勵
              // 例如：1塊=10, 5塊=250, 10塊=1000
-             const comboMultiplier = blocksInBucket * blocksInBucket;
-             const basePoints = comboMultiplier * 10;
-             const goldPoints = goldCount * 500;
-             const totalEarned = basePoints + goldPoints;
+             const totalEarned = calculateCrushPoints(blocksInBucket, goldCount).total;
              
-             updateUiState({ score: state.score + totalEarned });
+             updateUiState({
+               score: state.score + totalEarned,
+               stack: getStackPreview([]),
+             });
              showMessage(`+${totalEarned} COMBO x${blocksInBucket}!`, "#22d3ee", bucketRef.current.x, bucketRef.current.y - 80);
           }
           
@@ -395,15 +446,12 @@ export default function IceBlocksGame() {
 
         // 生成掉落物
         spawnTimerRef.current += (deltaTime / 16.67);
-        let currentSpawnRate = Math.max(35, SPAWN_RATE - Math.floor(state.score / 500) * 5); 
+        const currentSpawnRate = getSpawnRate(state.score);
         
         if (spawnTimerRef.current >= currentSpawnRate) {
           spawnTimerRef.current = 0;
           
-          const roll = Math.random();
-          let itemType: ItemType = 'ice';
-          if (roll > 0.95) itemType = 'gold';       // 5% 黃金塊
-          else if (roll > 0.82) itemType = 'fire';  // 13% 火球
+          const itemType = selectItemType(Math.random());
 
           const x = Math.random() * (CANVAS_WIDTH - 60) + 30;
 
@@ -414,8 +462,7 @@ export default function IceBlocksGame() {
               label: `fire-${Date.now()}`
             });
             World.add(engine.world, fireball);
-            const id = `fireBody-${Date.now()}-${Math.random()}`;
-            (fireball as any).id_string = id;
+            const id = fireball.id;
             bodiesRef.current.set(id, { id, itemType: 'fire', radius, color: '#ef4444', rotation: fireball.angle });
           } else {
             const isWide = Math.random() > 0.5;
@@ -432,18 +479,68 @@ export default function IceBlocksGame() {
               label: `ice-${Date.now()}`
             });
             World.add(engine.world, rect);
-            const id = `iceRect-${Date.now()}-${Math.random()}`;
-            (rect as any).id_string = id;
-            bodiesRef.current.set(id, { id, itemType, size: Math.max(w, h), color, rotation: rect.angle });
+            const id = rect.id;
+            bodiesRef.current.set(id, { id, itemType, width: w, height: h, color, rotation: rect.angle });
           }
         }
 
-        Engine.update(engine, deltaTime);
+        let remainingPhysicsTime = deltaTime;
+        while (remainingPhysicsTime > 0) {
+          const step = Math.min(remainingPhysicsTime, MAX_PHYSICS_STEP_MS);
+          Engine.update(engine, step);
+          remainingPhysicsTime -= step;
+        }
+
+        // 進入桶子捕捉區的火球即使先撞上堆疊，也必須爆炸。
+        for (const [id, bodyData] of bodiesRef.current) {
+          if (bodyData.itemType !== 'fire') continue;
+          const matterBody = engine.world.bodies.find((body) => body.id === id);
+          if (matterBody && isInsideBucketCaptureZone(
+            matterBody.position.x,
+            matterBody.position.y,
+            bucketRef.current.x,
+            bucketRef.current.y,
+            BUCKET_WIDTH,
+            BUCKET_HEIGHT,
+            BUCKET_THICKNESS,
+          )) {
+            handleFireballExplosion(matterBody.position.x, matterBody.position.y);
+            World.remove(engine.world, matterBody);
+            bodiesRef.current.delete(id);
+            break;
+          }
+        }
+
+        const stackItems: ItemType[] = [];
+        bodiesRef.current.forEach((bodyData, id) => {
+          if (bodyData.itemType === 'fire') return;
+          const matterBody = engine.world.bodies.find((body) => body.id === id);
+          if (matterBody && isInsideBucketCaptureZone(
+            matterBody.position.x,
+            matterBody.position.y,
+            bucketRef.current.x,
+            bucketRef.current.y,
+            BUCKET_WIDTH,
+            BUCKET_HEIGHT,
+            BUCKET_THICKNESS,
+          )) {
+            stackItems.push(bodyData.itemType);
+          }
+        });
+        const nextStack = getStackPreview(stackItems);
+        const currentStack = uiStateRef.current.stack;
+        if (
+          nextStack.blockCount !== currentStack.blockCount
+          || nextStack.goldCount !== currentStack.goldCount
+          || nextStack.projectedPoints !== currentStack.projectedPoints
+        ) {
+          updateUiState({ stack: nextStack });
+        }
 
         // 檢查掉落出界
-        const bodiesToRemove: string[] = [];
+        const bodiesToRemove: number[] = [];
         bodiesRef.current.forEach((bodyData, id) => {
-          const matterBody = engine.world.bodies.find((b: any) => (b as any).id_string === id);
+          const matterBody = engine.world.bodies.find((body) => body.id === id);
           if (!matterBody) { bodiesToRemove.push(id); return; }
 
           bodyData.rotation = matterBody.angle;
@@ -454,10 +551,9 @@ export default function IceBlocksGame() {
 
             if (bodyData.itemType === 'ice' || bodyData.itemType === 'gold') {
               // 漏接了能裝的冰塊，扣生命！
-              if (state.lives - 1 <= 0) {
-                updateUiState({ mode: 'gameOver', highScore: Math.max(state.score, state.highScore) });
-              } else {
-                updateUiState({ lives: state.lives - 1 });
+              const nextState = loseLife(uiStateRef.current);
+              updateUiState(nextState);
+              if (nextState.mode !== 'gameOver') {
                 showMessage("-1 LIFE (Dropped Ice)", "#ef4444", CANVAS_WIDTH/2, CANVAS_HEIGHT - 60);
               }
             }
@@ -538,7 +634,7 @@ export default function IceBlocksGame() {
 
       // 繪製動態物體
       bodiesRef.current.forEach((bodyData) => {
-        const matterBody = engine.world.bodies.find((b: any) => (b as any).id_string === bodyData.id);
+        const matterBody = engine.world.bodies.find((body) => body.id === bodyData.id);
         if (!matterBody) return;
         const { x, y } = matterBody.position;
         
@@ -570,11 +666,12 @@ export default function IceBlocksGame() {
           ctx.arc(0, -r, r*0.8, 0, Math.PI * 2);
           ctx.fill();
 
-        } else if (bodyData.size) {
+        } else if (bodyData.width && bodyData.height) {
           // 冰塊或金塊
-          const s = bodyData.size;
+          const width = bodyData.width;
+          const height = bodyData.height;
           ctx.globalAlpha = 0.9;
-          const grad = ctx.createLinearGradient(-s/2, -s/2, s/2, s/2);
+          const grad = ctx.createLinearGradient(-width/2, -height/2, width/2, height/2);
           
           if (bodyData.itemType === 'gold') {
             grad.addColorStop(0, '#fef08a');
@@ -587,12 +684,12 @@ export default function IceBlocksGame() {
           }
 
           ctx.fillStyle = grad;
-          drawRoundRect(ctx, -s/2, -s/2, s, s, 4);
+          drawRoundRect(ctx, -width/2, -height/2, width, height, 4);
           ctx.fill();
 
           ctx.strokeStyle = bodyData.itemType === 'gold' ? '#fffbeb' : 'rgba(255,255,255,0.4)';
           ctx.lineWidth = 2;
-          drawRoundRect(ctx, -s/2 + 2, -s/2 + 2, s - 4, s - 4, 3);
+          drawRoundRect(ctx, -width/2 + 2, -height/2 + 2, width - 4, height - 4, 3);
           ctx.stroke();
         }
         ctx.restore();
@@ -616,10 +713,34 @@ export default function IceBlocksGame() {
 
     animationFrameId = requestAnimationFrame(gameLoop);
     return () => cancelAnimationFrame(animationFrameId);
-  }, []);
+  }, [handleFireballExplosion, showMessage, updateUiState]);
+
+  const startGame = useCallback(() => {
+    const engine = engineRef.current;
+    const matter = matterRef.current;
+    if (engine && matter) {
+      bodiesRef.current.forEach((_, id) => {
+        const matterBody = engine.world.bodies.find((body) => body.id === id);
+        if (matterBody) matter.World.remove(engine.world, matterBody);
+      });
+      bodiesRef.current.clear();
+      particlesRef.current = [];
+    }
+    spawnTimerRef.current = 0;
+    keysPressed.current = {};
+    bucketRef.current.x = CANVAS_WIDTH / 2;
+    mousePosRef.current.x = CANVAS_WIDTH / 2;
+    updateUiState({
+      ...createInitialGameState(uiStateRef.current.highScore),
+      mode: 'playing',
+    });
+    requestAnimationFrame(() => canvasRef.current?.focus({ preventScroll: true }));
+  }, [updateUiState]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('button, a, input, textarea, select')) return;
       if (e.key === 'Enter') {
         const state = uiStateRef.current;
         if (state.mode === 'start' || state.mode === 'gameOver') {
@@ -629,35 +750,69 @@ export default function IceBlocksGame() {
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, []);
+  }, [startGame]);
 
-  const startGame = () => {
-    const engine = engineRef.current;
-    if (engine) {
-      bodiesRef.current.forEach((_, id) => {
-        const matterBody = engine.world.bodies.find((b: any) => (b as any).id_string === id);
-        if (matterBody) matterRef.current.World.remove(engine.world, matterBody);
-      });
-      bodiesRef.current.clear();
-      particlesRef.current = [];
-    }
-    spawnTimerRef.current = 0;
-    keysPressed.current = {};
-    updateUiState({ mode: 'playing', score: 0, lives: 3, message: null });
+  const togglePause = useCallback(() => {
+    const mode = uiStateRef.current.mode;
+    if (mode !== 'playing' && mode !== 'paused') return;
+    updateUiState({ mode: mode === 'playing' ? 'paused' : 'playing' });
+    requestAnimationFrame(() => canvasRef.current?.focus({ preventScroll: true }));
+  }, [updateUiState]);
+
+  const requestCrush = () => {
+    if (uiStateRef.current.mode !== 'playing' || uiStateRef.current.stack.blockCount === 0) return;
+    crushRequestedRef.current = true;
   };
+
+  const setDirection = (direction: 'left' | 'right', pressed: boolean) => {
+    keysPressed.current[direction === 'left' ? 'arrowleft' : 'arrowright'] = pressed;
+  };
+
+  const nudgeBucket = (direction: 'left' | 'right') => {
+    if (uiStateRef.current.mode !== 'playing') return;
+    const delta = direction === 'left' ? -55 : 55;
+    mousePosRef.current.x = Math.max(
+      BUCKET_WIDTH / 2,
+      Math.min(CANVAS_WIDTH - BUCKET_WIDTH / 2, bucketRef.current.x + delta),
+    );
+  };
+
+  const modeLabel = {
+    start: 'Ready',
+    playing: 'Catching',
+    paused: 'Paused',
+    gameOver: 'Melted',
+  }[uiState.mode];
 
   return (
     <Container>
-      <div className="min-h-screen flex flex-col items-center justify-center gap-6 py-8 px-4 font-sans antialiased text-slate-100 select-none">
+      <div className="min-h-screen flex flex-col items-center gap-5 py-8 px-2 sm:px-4 font-sans antialiased select-none">
         
-        <div className="text-center space-y-2">
-          <h1 className="text-5xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-blue-300 to-cyan-300 drop-shadow-[0_2px_10px_rgba(34,211,238,0.4)]">
-            Ice Bucket Challenge
-          </h1>
-          <p className="text-cyan-200/80 font-medium tracking-wide">Risk & Reward Catcher</p>
+        <div className="flex w-full max-w-3xl flex-col items-center gap-5 lg:flex-row lg:justify-center lg:gap-8">
+          <div className="space-y-2 text-center lg:text-left">
+            <h1 className="text-4xl sm:text-5xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-cyan-600 via-blue-700 to-cyan-600 drop-shadow-[0_2px_10px_rgba(14,116,144,0.2)]">
+              Ice Blocks
+            </h1>
+            <p className="text-slate-500 font-semibold tracking-[0.14em] uppercase text-sm">Catch · Stack · Crush</p>
+          </div>
+
+          <div className="grid w-full max-w-[400px] grid-cols-3 gap-2 lg:flex-1" aria-label="Current run status">
+            <div className="rounded-xl border border-cyan-200 bg-white px-3 py-2.5 shadow-sm">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Status</p>
+              <p className="mt-1 text-sm font-black text-slate-800">{modeLabel}</p>
+            </div>
+            <div className="rounded-xl border border-cyan-200 bg-white px-3 py-2.5 shadow-sm">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Score</p>
+              <p className="mt-1 text-sm font-black tabular-nums text-slate-800">{uiState.score.toLocaleString('en-US')}</p>
+            </div>
+            <div className="rounded-xl border border-cyan-200 bg-white px-3 py-2.5 shadow-sm">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Lives</p>
+              <p className="mt-1 text-sm font-black text-slate-800">{uiState.lives} / 3</p>
+            </div>
+          </div>
         </div>
 
-        <div className="relative group">
+        <div className="relative group w-full max-w-[400px]">
           <div className="absolute -inset-1 bg-gradient-to-b from-cyan-500/30 to-blue-600/30 rounded-[1.25rem] blur-lg group-hover:opacity-100 transition duration-1000 group-hover:duration-200"></div>
           
           <div className="relative border border-cyan-400/40 rounded-2xl overflow-hidden bg-slate-950 shadow-[0_0_40px_rgba(34,211,238,0.1)] ring-1 ring-white/10">
@@ -665,15 +820,24 @@ export default function IceBlocksGame() {
               ref={canvasRef}
               width={CANVAS_WIDTH}
               height={CANVAS_HEIGHT}
-              className="block cursor-crosshair transform-gpu"
-            />
+              tabIndex={0}
+              role="img"
+              aria-label={`Ice Blocks game field. ${modeLabel}. Score ${uiState.score}. ${uiState.lives} lives remaining. Stack ${uiState.stack.blockCount} blocks with ${uiState.stack.goldCount} gold, worth ${uiState.stack.projectedPoints} points.`}
+              className="block w-full h-auto cursor-crosshair transform-gpu outline-none focus-visible:ring-4 focus-visible:ring-cyan-300"
+              style={{ touchAction: 'none', scrollMarginTop: 88 }}
+            >
+              Ice Blocks physics catcher game. Use the controls below the field to move and crush blocks.
+            </canvas>
 
-            {uiState.mode === 'playing' && (
+            {(uiState.mode === 'playing' || uiState.mode === 'paused') && (
               <div className="absolute top-4 left-5 right-5 flex justify-between items-start pointer-events-none">
                 <div className="flex flex-col">
                   <span className="text-cyan-300 font-bold text-xs tracking-widest uppercase drop-shadow-md">Score</span>
                   <span className="text-white font-black text-4xl drop-shadow-[0_0_15px_rgba(255,255,255,0.6)] tabular-nums">
                     {uiState.score}
+                  </span>
+                  <span className="mt-1 rounded-full border border-cyan-300/25 bg-slate-950/55 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-cyan-100">
+                    Stack {uiState.stack.blockCount} · Gold {uiState.stack.goldCount} · +{uiState.stack.projectedPoints}
                   </span>
                 </div>
                 <div className="flex gap-1.5 mt-2">
@@ -691,6 +855,23 @@ export default function IceBlocksGame() {
               </div>
             )}
 
+            {uiState.mode === 'paused' && (
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/75 backdrop-blur-sm">
+                <div className="rounded-2xl border border-cyan-400/30 bg-slate-900/90 p-7 text-center shadow-2xl">
+                  <div className="i-ph-pause-circle-bold mx-auto mb-3 text-5xl text-cyan-300" aria-hidden="true" />
+                  <h2 className="text-3xl font-black text-white">Paused</h2>
+                  <p className="mt-2 text-sm text-slate-300">The physics field is frozen.</p>
+                  <button
+                    type="button"
+                    onClick={togglePause}
+                    className="mt-5 min-h-12 w-full rounded-xl bg-cyan-400 px-6 font-black uppercase tracking-wider text-slate-950 hover:bg-cyan-300 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-200"
+                  >
+                    Resume
+                  </button>
+                </div>
+              </div>
+            )}
+
             {uiState.mode === 'start' && (
               <div className="absolute inset-0 z-10 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center transition-opacity flex-col border-t border-white/5">
                 <div className="p-8 bg-slate-900/80 rounded-3xl border border-cyan-500/20 shadow-2xl backdrop-blur-md text-center transform hover:scale-105 transition-transform duration-300">
@@ -700,7 +881,7 @@ export default function IceBlocksGame() {
                   <h2 className="text-3xl font-black text-white mb-2 tracking-tight">Gather & Crush</h2>
                   <p className="text-cyan-200/80 mb-8 max-w-[220px] mx-auto text-sm leading-relaxed">
                     Collect ice, but watch out for <span className="text-red-400 font-bold">Fireballs</span>!<br/> 
-                    Crush your bucket for massive combos!
+                    Crush uses <span className="font-bold text-white">blocks² × 10</span>; gold adds <span className="font-bold text-yellow-300">+500</span>.
                   </p>
                   <button 
                     onClick={startGame}
@@ -739,6 +920,50 @@ export default function IceBlocksGame() {
           </div>
         </div>
 
+        <div className="grid w-full max-w-[400px] grid-cols-4 gap-2" aria-label="Game controls">
+          <DirectionButton
+            direction="left"
+            label="Move left"
+            disabled={uiState.mode !== 'playing'}
+            setDirection={setDirection}
+            nudgeBucket={nudgeBucket}
+          />
+          <button
+            type="button"
+            disabled={uiState.mode !== 'playing' || uiState.stack.blockCount === 0}
+            onClick={requestCrush}
+            aria-label={uiState.stack.blockCount > 0 ? `Crush ${uiState.stack.blockCount} blocks for ${uiState.stack.projectedPoints} points` : 'Crush stack, bucket empty'}
+            className="col-span-2 min-h-12 rounded-xl bg-rose-500 px-3 py-2 text-white shadow-[0_8px_20px_rgba(244,63,94,0.25)] hover:bg-rose-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-rose-200 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <span className="block text-sm font-black uppercase tracking-wider">
+              {uiState.stack.blockCount > 0 ? `Crush +${uiState.stack.projectedPoints}` : 'Bucket empty'}
+            </span>
+            <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-[0.16em] text-white/80">
+              {uiState.stack.blockCount} blocks · {uiState.stack.goldCount} gold
+            </span>
+          </button>
+          <DirectionButton
+            direction="right"
+            label="Move right"
+            disabled={uiState.mode !== 'playing'}
+            setDirection={setDirection}
+            nudgeBucket={nudgeBucket}
+          />
+          {(uiState.mode === 'playing' || uiState.mode === 'paused') && (
+            <button
+              type="button"
+              onClick={togglePause}
+              className="col-span-4 min-h-11 rounded-xl border border-cyan-200 bg-white text-sm font-bold text-cyan-800 hover:bg-cyan-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-200"
+            >
+              {uiState.mode === 'paused' ? 'Resume game' : 'Pause game'} · P
+            </button>
+          )}
+        </div>
+
+        <p className="sr-only" aria-live="polite">
+          {modeLabel}. Score {uiState.score}. {uiState.lives} lives remaining. Stack {uiState.stack.blockCount}, worth {uiState.stack.projectedPoints} points.
+        </p>
+
         {/* Controls and Mechanics Panel */}
         <div className="flex flex-col md:flex-row gap-4 w-full max-w-2xl px-2">
           {/* Controls Mini-card */}
@@ -751,12 +976,12 @@ export default function IceBlocksGame() {
                 <span className="text-slate-400">Move Bucket</span>
                 <div className="flex gap-1.5 focus:outline-none">
                   <span className="text-cyan-300 font-mono text-xs font-bold border border-cyan-900 bg-cyan-900/30 px-2 py-1 rounded">A/D</span>
-                  <span className="text-cyan-300 font-mono text-xs font-bold border border-cyan-900 bg-cyan-900/30 px-2 py-1 rounded tracking-tighter">Mouse</span>
+                  <span className="text-cyan-300 font-mono text-xs font-bold border border-cyan-900 bg-cyan-900/30 px-2 py-1 rounded tracking-tighter">Drag</span>
                 </div>
               </div>
               <div className="flex justify-between items-center text-sm">
                 <span className="text-slate-400 font-semibold text-rose-300">Crush & Score!</span>
-                <span className="text-white font-bold bg-rose-600/80 px-3 py-1 rounded border border-rose-500 text-xs shadow-[0_0_10px_rgba(225,29,72,0.4)]">SPACE / Click</span>
+                <span className="text-white font-bold bg-rose-600/80 px-3 py-1 rounded border border-rose-500 text-xs shadow-[0_0_10px_rgba(225,29,72,0.4)]">SPACE / Button</span>
               </div>
             </div>
           </div>
@@ -796,5 +1021,36 @@ export default function IceBlocksGame() {
         </div>
       </div>
     </Container>
+  );
+}
+
+function DirectionButton({
+  direction,
+  label,
+  disabled,
+  setDirection,
+  nudgeBucket,
+}: {
+  direction: 'left' | 'right';
+  label: string;
+  disabled: boolean;
+  setDirection: (direction: 'left' | 'right', pressed: boolean) => void;
+  nudgeBucket: (direction: 'left' | 'right') => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => nudgeBucket(direction)}
+      onPointerDown={() => setDirection(direction, true)}
+      onPointerUp={() => setDirection(direction, false)}
+      onPointerCancel={() => setDirection(direction, false)}
+      onPointerLeave={() => setDirection(direction, false)}
+      onBlur={() => setDirection(direction, false)}
+      className="min-h-12 rounded-xl border border-cyan-700 bg-cyan-950 text-2xl font-black text-cyan-100 hover:bg-cyan-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      {direction === 'left' ? '←' : '→'}
+    </button>
   );
 }

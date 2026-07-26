@@ -116,6 +116,7 @@ export const INITIAL_UNLOCKED_WIDTH = 3;
 export const INITIAL_UNLOCKED_HEIGHT = 3;
 export const SAVE_KEY = 'farm_save_v1';
 export const AUTO_SAVE_INTERVAL = 30000; // 30 秒
+export const TRADE_CYCLE_MS = 4 * 3600 * 1000;
 
 // ============================================================================
 // 時間工具
@@ -145,6 +146,7 @@ export function formatCountdown(ms: number): string {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes === 0) return `${Math.max(0, totalSeconds)}s`;
   return `${minutes}m`;
 }
 
@@ -210,12 +212,27 @@ export function migrateSave(raw: unknown): FarmState {
     return createInitialState();
   }
 
-  const data = raw as unknown;
-  return data as FarmState;
+  const fallback = createInitialState();
+  const data = raw as Partial<FarmState>;
+  if (!Array.isArray(data.plots) || data.plots.length !== FARM_WIDTH * FARM_HEIGHT) {
+    return fallback;
+  }
+
+  const migrated: FarmState = {
+    ...fallback,
+    ...data,
+    plots: data.plots,
+    player: { ...fallback.player, ...data.player },
+    weather: { ...fallback.weather, ...data.weather },
+    achievements: data.achievements ?? {},
+    inventory: data.inventory ?? {},
+    selectedSeedId: data.selectedSeedId ?? null,
+  };
+
+  return syncUnlockedPlots(migrated);
 }
 
-export function createInitialState(): FarmState {
-  const now = Date.now();
+export function createInitialState(now: number = Date.now()): FarmState {
   const plots: PlotState[] = [];
 
   // 初始 6×6 = 36 格，但只解鎖 3×3 = 9 格
@@ -275,7 +292,12 @@ export function tillPlot(state: FarmState, plotId: number): FarmState {
   };
 }
 
-export function seedPlot(state: FarmState, plotId: number, cropId: string): FarmState {
+export function seedPlot(
+  state: FarmState,
+  plotId: number,
+  cropId: string,
+  now: number = Date.now(),
+): FarmState {
   const crop = CROP_DEFS[cropId];
   if (!crop) return state;
 
@@ -285,13 +307,10 @@ export function seedPlot(state: FarmState, plotId: number, cropId: string): Farm
   // 檢查玩家等級
   if (state.player.level < crop.levelRequired) return state;
 
-  // 檢查庫存或金幣（先用金幣購買）
-  const hasSeed = (state.inventory[cropId] ?? 0) > 0;
-  const hasCoins = state.player.coins >= crop.buyPrice;
+  const currentSeason = getCurrentSeason(new Date(now));
+  if (!crop.seasons.includes(currentSeason)) return state;
+  if (state.player.coins < crop.buyPrice) return state;
 
-  if (!hasSeed && !hasCoins) return state;
-
-  const now = Date.now();
   const newPlots: PlotState[] = state.plots.map((p) =>
     p.id === plotId
       ? {
@@ -310,7 +329,7 @@ export function seedPlot(state: FarmState, plotId: number, cropId: string): Farm
     plots: newPlots,
     player: {
       ...state.player,
-      coins: hasSeed ? state.player.coins : state.player.coins - crop.buyPrice,
+      coins: state.player.coins - crop.buyPrice,
     },
   };
 }
@@ -359,7 +378,6 @@ export function harvestPlot(state: FarmState, plotId: number, now: number): Farm
 
   // double_yield 檢查
   const yield_ = crop.special === 'double_yield' ? 2 : 1;
-  const sellReward = crop.sellPrice * yield_;
 
   const newPlots: PlotState[] = state.plots.map((p) =>
     p.id === plotId
@@ -379,21 +397,26 @@ export function harvestPlot(state: FarmState, plotId: number, now: number): Farm
     [crop.id]: (state.inventory[crop.id] ?? 0) + yield_,
   };
 
-  return {
+  const nextState: FarmState = {
     ...state,
     plots: newPlots,
     player: {
       ...state.player,
-      coins: state.player.coins + sellReward,
       xp: state.player.xp + crop.xpReward,
       level: calcLevel(state.player.xp + crop.xpReward),
       totalHarvests: state.player.totalHarvests + 1,
     },
     inventory: newInventory,
   };
+
+  return syncUnlockedPlots(nextState);
 }
 
-export function clearPlot(state: FarmState, plotId: number): FarmState {
+export function clearPlot(
+  state: FarmState,
+  plotId: number,
+  now: number = Date.now(),
+): FarmState {
   const plot = state.plots[plotId];
   if (!plot || plot.status !== 'wilted') return state;
 
@@ -404,7 +427,7 @@ export function clearPlot(state: FarmState, plotId: number): FarmState {
           status: 'empty' as const,
           cropId: null,
           waterCount: 0,
-          lastWateredAt: Date.now(),
+          lastWateredAt: now,
           plantedAt: 0,
         }
       : p
@@ -422,7 +445,7 @@ export function handlePlotClick(state: FarmState, plotId: number, now: number): 
 
   // 優先級：枯萎 > 就緒收成 > 澆水 > 翻土 > 播種
   if (plot.status === 'wilted') {
-    return clearPlot(state, plotId);
+    return clearPlot(state, plotId, now);
   }
 
   if (plot.status === 'ready') {
@@ -439,7 +462,7 @@ export function handlePlotClick(state: FarmState, plotId: number, now: number): 
 
   if (plot.status === 'tilled') {
     if (state.selectedSeedId) {
-      return seedPlot(state, plotId, state.selectedSeedId);
+      return seedPlot(state, plotId, state.selectedSeedId, now);
     }
     return state;
   }
@@ -465,10 +488,10 @@ export function applyOfflineTick(state: FarmState, now: number): FarmState {
     return plot;
   });
 
-  return {
+  return syncUnlockedPlots({
     ...state,
     plots: newPlots,
-  };
+  });
 }
 
 // ============================================================================
@@ -484,6 +507,27 @@ export function xpToNextLevel(xp: number): number {
   const currentLevel = calcLevel(xp);
   const nextLevelXp = currentLevel * 100;
   return nextLevelXp - xp;
+}
+
+export function getUnlockLevelForPlot(plotId: number): number {
+  const row = Math.floor(plotId / FARM_WIDTH);
+  const column = plotId % FARM_WIDTH;
+  return Math.max(1, Math.max(row, column) - 1);
+}
+
+export function syncUnlockedPlots(state: FarmState): FarmState {
+  const level = calcLevel(state.player.xp);
+  return {
+    ...state,
+    plots: state.plots.map((plot) => ({
+      ...plot,
+      isUnlocked: level >= getUnlockLevelForPlot(plot.id),
+    })),
+    player: {
+      ...state.player,
+      level,
+    },
+  };
 }
 
 // ============================================================================
@@ -519,7 +563,7 @@ export function tickWeather(state: FarmState, now: number): FarmState {
 
 export function sellCrop(state: FarmState, cropId: string, amount: number): FarmState {
   const crop = CROP_DEFS[cropId];
-  if (!crop) return state;
+  if (!crop || !Number.isInteger(amount) || amount <= 0) return state;
 
   const inventory = state.inventory[cropId] ?? 0;
   if (inventory < amount) return state;
@@ -535,4 +579,111 @@ export function sellCrop(state: FarmState, cropId: string, amount: number): Farm
       [cropId]: inventory - amount,
     },
   };
+}
+
+// ============================================================================
+// 市場訂單
+// ============================================================================
+
+export function refreshTradeRequest(state: FarmState, now: number): FarmState {
+  const cycle = Math.floor(now / TRADE_CYCLE_MS);
+  const activeRequest = state.activeTradeRequest;
+  if (activeRequest && activeRequest.expiresAt > now) return state;
+
+  if (state.achievements.lastTradeCycle === cycle) {
+    return activeRequest ? { ...state, activeTradeRequest: null } : state;
+  }
+
+  const season = getCurrentSeason(new Date(now));
+  const eligibleCrops = Object.values(CROP_DEFS).filter((crop) => (
+    crop.levelRequired <= state.player.level && crop.seasons.includes(season)
+  ));
+  if (eligibleCrops.length === 0) return state;
+
+  const cropIndex = Math.abs(cycle * 31 + state.player.level * 17) % eligibleCrops.length;
+  const crop = eligibleCrops[cropIndex];
+  const quantity = 2 + Math.abs(cycle % 2);
+  const reward = crop.sellPrice * quantity + 20 + state.player.level * 5;
+
+  return {
+    ...state,
+    activeTradeRequest: {
+      id: `market-${cycle}-${crop.id}`,
+      cropId: crop.id,
+      quantity,
+      reward,
+      expiresAt: (cycle + 1) * TRADE_CYCLE_MS,
+    },
+    achievements: {
+      ...state.achievements,
+      lastTradeCycle: cycle,
+    },
+  };
+}
+
+export function fulfillTradeRequest(state: FarmState, now: number): FarmState {
+  const request = state.activeTradeRequest;
+  if (!request || request.expiresAt <= now) return state;
+
+  const inventory = state.inventory[request.cropId] ?? 0;
+  if (inventory < request.quantity) return state;
+
+  return {
+    ...state,
+    activeTradeRequest: null,
+    player: {
+      ...state.player,
+      coins: state.player.coins + request.reward,
+    },
+    inventory: {
+      ...state.inventory,
+      [request.cropId]: inventory - request.quantity,
+    },
+    achievements: {
+      ...state.achievements,
+      marketOrders: (state.achievements.marketOrders ?? 0) + 1,
+    },
+  };
+}
+
+export function moveFarmFocus(
+  plotId: number,
+  key: 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight' | 'Home' | 'End',
+): number {
+  const clamped = Math.max(0, Math.min(FARM_WIDTH * FARM_HEIGHT - 1, Math.floor(plotId)));
+  const row = Math.floor(clamped / FARM_WIDTH);
+  const column = clamped % FARM_WIDTH;
+
+  switch (key) {
+    case 'ArrowUp':
+      return Math.max(0, row - 1) * FARM_WIDTH + column;
+    case 'ArrowDown':
+      return Math.min(FARM_HEIGHT - 1, row + 1) * FARM_WIDTH + column;
+    case 'ArrowLeft':
+      return row * FARM_WIDTH + Math.max(0, column - 1);
+    case 'ArrowRight':
+      return row * FARM_WIDTH + Math.min(FARM_WIDTH - 1, column + 1);
+    case 'Home':
+      return row * FARM_WIDTH;
+    case 'End':
+      return row * FARM_WIDTH + FARM_WIDTH - 1;
+  }
+}
+
+export function farmStateToRows(state: FarmState): string[] {
+  const symbols: Record<PlotStatus, string> = {
+    empty: '.',
+    tilled: 'T',
+    seeded: 'S',
+    growing: 'G',
+    ready: 'R',
+    wilted: 'W',
+  };
+
+  return Array.from({ length: FARM_HEIGHT }, (_, row) => (
+    state.plots
+      .slice(row * FARM_WIDTH, (row + 1) * FARM_WIDTH)
+      .map((plot) => (plot.isUnlocked ? symbols[plot.status] : '#'))
+      .join('')
+  ));
 }

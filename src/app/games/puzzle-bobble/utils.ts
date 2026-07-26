@@ -21,6 +21,22 @@ export type FlyingBubble = {
   color: string;
 };
 
+export type BubblePressure = 'safe' | 'pressured' | 'critical';
+
+export type BubbleResolution = {
+  board: Bubble[];
+  matches: Bubble[];
+  floating: Bubble[];
+  points: number;
+  combo: number;
+  won: boolean;
+};
+
+export type CeilingAdvance = {
+  board: Bubble[];
+  lost: boolean;
+};
+
 export function getBubbleX(row: number, col: number): number {
   return col * BUBBLE_DIAMETER + BUBBLE_RADIUS + (row % 2 === 1 ? BUBBLE_RADIUS : 0);
 }
@@ -42,6 +58,46 @@ export function getGridPos(x: number, y: number): { row: number, col: number } {
   if (col >= maxCols) col = maxCols - 1;
   
   return { row, col };
+}
+
+export function getLandingPosition(
+  board: Bubble[],
+  x: number,
+  y: number,
+): { row: number; col: number } {
+  const start = getGridPos(x, y);
+  const occupied = new Set(board.map((bubble) => `${bubble.row},${bubble.col}`));
+  if (!occupied.has(`${start.row},${start.col}`)) return start;
+
+  const visited = new Set([`${start.row},${start.col}`]);
+  let frontier = [start];
+
+  while (frontier.length > 0) {
+    const nextFrontier: Array<{ row: number; col: number }> = [];
+    const openPositions: Array<{ row: number; col: number }> = [];
+
+    for (const position of frontier) {
+      for (const neighbor of getNeighbors(position.row, position.col)) {
+        if (neighbor.row >= MAX_ROWS) continue;
+        const key = `${neighbor.row},${neighbor.col}`;
+        if (visited.has(key)) continue;
+        visited.add(key);
+        nextFrontier.push(neighbor);
+        if (!occupied.has(key)) openPositions.push(neighbor);
+      }
+    }
+
+    if (openPositions.length > 0) {
+      return openPositions.sort((first, second) => (
+        distance(x, y, getBubbleX(first.row, first.col), getBubbleY(first.row))
+        - distance(x, y, getBubbleX(second.row, second.col), getBubbleY(second.row))
+      ))[0];
+    }
+
+    frontier = nextFrontier;
+  }
+
+  return start;
 }
 
 export function distance(x1: number, y1: number, x2: number, y2: number) {
@@ -142,4 +198,102 @@ export function findFloating(board: Bubble[]): Bubble[] {
   }
 
   return board.filter(b => !attached.has(`${b.row},${b.col}`));
+}
+
+export function resolveBubblePlacement(
+  board: Bubble[],
+  placedBubble: Bubble,
+  currentCombo: number,
+): BubbleResolution {
+  const boardWithBubble = [...board.map((bubble) => ({ ...bubble })), { ...placedBubble }];
+  const matches = findMatches(boardWithBubble, placedBubble);
+
+  if (matches.length < 3) {
+    return {
+      board: boardWithBubble,
+      matches: [],
+      floating: [],
+      points: 0,
+      combo: 0,
+      won: false,
+    };
+  }
+
+  const matchKeys = new Set(matches.map((bubble) => `${bubble.row},${bubble.col}`));
+  const boardAfterMatches = boardWithBubble.filter(
+    (bubble) => !matchKeys.has(`${bubble.row},${bubble.col}`),
+  );
+  const floating = findFloating(boardAfterMatches);
+  const floatingKeys = new Set(floating.map((bubble) => `${bubble.row},${bubble.col}`));
+  const resolvedBoard = boardAfterMatches.filter(
+    (bubble) => !floatingKeys.has(`${bubble.row},${bubble.col}`),
+  );
+  const combo = currentCombo + 1;
+
+  return {
+    board: resolvedBoard,
+    matches,
+    floating,
+    points: matches.length * 10 + floating.length * 20 + Math.max(0, combo - 1) * 15,
+    combo,
+    won: resolvedBoard.length === 0,
+  };
+}
+
+export function advanceCeiling(board: Bubble[], colors: string[]): CeilingAdvance {
+  if (colors.length !== COLS) {
+    throw new Error(`A ceiling row requires exactly ${COLS} colors.`);
+  }
+
+  const shiftedBoard = board.map((bubble) => ({ ...bubble, row: bubble.row + 1 }));
+  const nextBoard = [
+    ...shiftedBoard,
+    ...colors.map((color, col) => ({ row: 0, col, color })),
+  ];
+
+  return {
+    board: nextBoard,
+    lost: hasCrossedDangerLine(nextBoard),
+  };
+}
+
+export function hasCrossedDangerLine(board: Bubble[]): boolean {
+  return board.some((bubble) => (
+    bubble.row >= MAX_ROWS - 1
+    || getBubbleY(bubble.row) > BOARD_HEIGHT - BUBBLE_DIAMETER * 2
+  ));
+}
+
+export function getBubblePressure(board: Bubble[]): BubblePressure {
+  const lowestRow = board.reduce((maximum, bubble) => Math.max(maximum, bubble.row), 0);
+  if (lowestRow >= 11) return 'critical';
+  if (lowestRow >= 8) return 'pressured';
+  return 'safe';
+}
+
+export function getShotsUntilDrop(shotsFired: number, interval: number): number {
+  if (!Number.isInteger(interval) || interval <= 0) {
+    throw new Error('Drop interval must be a positive integer.');
+  }
+
+  const normalizedShots = Math.max(0, Math.floor(shotsFired));
+  return interval - (normalizedShots % interval);
+}
+
+export function parseBestScore(value: string | null): number {
+  if (value === null) return 0;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 0;
+}
+
+export function bubbleBoardToRows(board: Bubble[]): string[] {
+  const boardMap = new Map(board.map((bubble) => [
+    `${bubble.row},${bubble.col}`,
+    COLORS.includes(bubble.color) ? String(COLORS.indexOf(bubble.color) + 1) : '?',
+  ]));
+
+  return Array.from({ length: MAX_ROWS }, (_, row) => {
+    const columns = row % 2 === 1 ? COLS - 1 : COLS;
+    return Array.from({ length: columns }, (_, col) => boardMap.get(`${row},${col}`) ?? '.').join('');
+  });
 }

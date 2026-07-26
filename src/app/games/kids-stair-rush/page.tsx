@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Container from "@/components/common/Container";
 import {
   CANVAS_HEIGHT,
@@ -9,6 +9,9 @@ import {
   GameState,
   createInitialState,
   drawScene,
+  getLandingForecast,
+  getPaceProgress,
+  parseHighScore,
   setPlayerInput,
   renderGameToText,
   restartGame,
@@ -24,13 +27,80 @@ declare global {
   }
 }
 
+function GameMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-white/8 bg-black/25 px-1 py-2">
+      <div className="text-[10px] font-bold tracking-wider text-gray-500">{label}</div>
+      <div className="mt-0.5 text-sm font-black text-white">{value}</div>
+    </div>
+  );
+}
+
+function PlatformLegend({ color, label, detail }: { color: string; label: string; detail: string }) {
+  return (
+    <div className="flex min-h-12 items-center gap-2 rounded-xl border border-white/6 bg-black/20 px-3 py-2">
+      <span className={`h-2.5 w-8 shrink-0 rounded-full ${color}`} aria-hidden="true" />
+      <span>
+        <strong className="block text-gray-200">{label}</strong>
+        <span className="text-[11px] text-gray-500">{detail}</span>
+      </span>
+    </div>
+  );
+}
+
+const PLATFORM_LABELS = {
+  normal: "綠色安全踏板",
+  spike: "銀色尖刺踏板",
+  trampoline: "黃色彈簧踏板",
+  "conveyor-left": "向左藍色輸送帶",
+  "conveyor-right": "向右藍色輸送帶",
+  fake: "粉色崩落踏板",
+} as const;
+
+const DIRECTION_LABELS = {
+  left: "往左修正",
+  right: "往右修正",
+  hold: "保持目前方向",
+} as const;
+
+function buildLiveState(state: GameState) {
+  const pace = getPaceProgress(state.floor);
+  return {
+    mode: state.mode,
+    floor: state.floor,
+    hp: state.player.hp,
+    highScore: state.highScore,
+    streak: state.streak,
+    feedback: state.feedback,
+    feedbackTimer: state.feedbackTimer,
+    scrollSpeed: state.scrollSpeed,
+    pace,
+    nextLanding: getLandingForecast(state),
+  };
+}
+
 export default function KidsStairRushPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const stateRef = useRef<GameState>(createInitialState());
+  const [initialState] = useState(() => createInitialState(Math.random, 0));
+  const stateRef = useRef<GameState>(initialState);
+  const [liveState, setLiveState] = useState(() => buildLiveState(initialState));
 
   const lastTimeRef = useRef<number>(0);
+  const lastUiUpdateRef = useRef<number>(0);
   const leftPressed = useRef(false);
   const rightPressed = useRef(false);
+
+  const publishLiveState = useCallback((state: GameState) => {
+    setLiveState(buildLiveState(state));
+  }, []);
+
+  useEffect(() => {
+    const highScore = parseHighScore(localStorage.getItem("nsShaftHighScore"));
+    if (highScore !== stateRef.current.highScore) {
+      stateRef.current = { ...stateRef.current, highScore };
+      publishLiveState(stateRef.current);
+    }
+  }, [publishLiveState]);
 
   const drawCurrentState = useCallback((state: GameState) => {
     if (!canvasRef.current) return;
@@ -66,25 +136,29 @@ export default function KidsStairRushPage() {
     if (state.mode === "ready") {
       stateRef.current = startGame(state);
       lastTimeRef.current = 0;
+      publishLiveState(stateRef.current);
       return;
     }
 
     if (state.mode === "gameOver") {
       stateRef.current = startGame(restartGame());
       lastTimeRef.current = 0;
+      publishLiveState(stateRef.current);
       return;
     }
 
     if (state.mode === "paused") {
       stateRef.current = togglePause(state);
       lastTimeRef.current = 0;
+      publishLiveState(stateRef.current);
     }
-  }, []);
+  }, [publishLiveState]);
 
   const restartFromMobile = useCallback(() => {
     stateRef.current = startGame(restartGame());
     lastTimeRef.current = 0;
-  }, []);
+    publishLiveState(stateRef.current);
+  }, [publishLiveState]);
 
   const togglePauseFromMobile = useCallback(() => {
     const state = stateRef.current;
@@ -92,8 +166,9 @@ export default function KidsStairRushPage() {
     if (state.mode === "playing" || state.mode === "paused") {
       stateRef.current = togglePause(state);
       lastTimeRef.current = 0;
+      publishLiveState(stateRef.current);
     }
-  }, []);
+  }, [publishLiveState]);
 
   // 遊戲迴圈
   const gameLoop = useCallback(() => {
@@ -110,7 +185,11 @@ export default function KidsStairRushPage() {
 
     // 繪製畫面
     drawCurrentState(stateRef.current);
-  }, [drawCurrentState]);
+    if (now - lastUiUpdateRef.current >= 150) {
+      lastUiUpdateRef.current = now;
+      publishLiveState(stateRef.current);
+    }
+  }, [drawCurrentState, publishLiveState]);
 
   // rAF 迴圈
   useEffect(() => {
@@ -133,6 +212,8 @@ export default function KidsStairRushPage() {
 
       switch (e.key) {
         case " ":
+        case "p":
+        case "P":
           e.preventDefault();
           if (state.mode === "ready") {
             stateRef.current = startGame(state);
@@ -145,6 +226,7 @@ export default function KidsStairRushPage() {
             stateRef.current = togglePause(state);
             lastTimeRef.current = 0;
           }
+          publishLiveState(stateRef.current);
           break;
 
         case "ArrowLeft":
@@ -181,13 +263,25 @@ export default function KidsStairRushPage() {
       }
     };
 
+    const handleBlur = () => {
+      leftPressed.current = false;
+      rightPressed.current = false;
+      if (stateRef.current.mode === "playing") {
+        stateRef.current = togglePause(stateRef.current);
+      }
+      publishLiveState(stateRef.current);
+      drawCurrentState(stateRef.current);
+    };
+
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleBlur);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleBlur);
     };
-  }, [setDirectionPressed]);
+  }, [drawCurrentState, publishLiveState, setDirectionPressed]);
 
   // 觸控事件
   useEffect(() => {
@@ -255,34 +349,55 @@ export default function KidsStairRushPage() {
     window.advanceTime = (ms: number) => {
       stateRef.current = tick(stateRef.current, ms);
       drawCurrentState(stateRef.current);
+      publishLiveState(stateRef.current);
     };
 
     return () => {
       delete window.render_game_to_text;
       delete window.advanceTime;
     };
-  }, [drawCurrentState]);
+  }, [drawCurrentState, publishLiveState]);
+
+  const pacePercent = Math.round(liveState.pace.percent);
+  const paceTarget = liveState.pace.nextFloor === null
+    ? "已達最高捲動速度"
+    : `距離 B${liveState.pace.nextFloor} 還有 ${liveState.pace.floorsRemaining} 層`;
+  const landingGuide = liveState.nextLanding
+    ? `${DIRECTION_LABELS[liveState.nextLanding.direction]} · ${PLATFORM_LABELS[liveState.nextLanding.type]}`
+    : "等待下一塊踏板進入視野";
+  const statusMessage = liveState.mode === "ready"
+    ? "準備好後按 Space 或點擊開始"
+    : liveState.mode === "paused"
+      ? "遊戲已暫停，按 P、Space 或繼續"
+      : liveState.mode === "gameOver"
+        ? `${liveState.feedback} · 再試一次挑戰 B${liveState.floor}`
+        : liveState.feedbackTimer > 0
+          ? liveState.feedback
+          : "保持移動，先看下一塊踏板再修正方向";
 
   return (
-    <div className="min-h-screen py-4 sm:py-8 bg-[#0A0A0A] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-gray-800 via-[#0A0A0A] to-black">
+    <div className="min-h-screen bg-[#07090f] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-800 via-[#090b12] to-black py-3 sm:py-5">
       <Container size="lg">
         {/* 標題 */}
-        <div className="mb-6 sm:mb-10 text-center px-1">
-          <div className="inline-flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-1 mb-3 px-4 py-2 rounded-full bg-white/5 border border-white/10 shadow-[0_0_15px_rgba(255,255,255,0.05)]">
+        <div className="mb-4 px-1 text-center sm:mb-6">
+          <div className="mb-2 inline-flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-full border border-white/10 bg-white/5 px-4 py-2 shadow-[0_0_15px_rgba(255,255,255,0.05)]">
             <i className="i-ph-game-controller-duotone text-2xl sm:text-3xl text-yellow-400" />
-            <h1 className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-400">
+            <h1 className="bg-gradient-to-b from-white to-gray-400 bg-clip-text text-2xl font-black tracking-tight text-transparent sm:text-3xl md:text-4xl">
               小朋友下樓梯
             </h1>
-            <span className="text-sm sm:text-xl md:text-2xl font-bold text-gray-500">(NS-Shaft)</span>
+            <span className="text-sm font-bold text-gray-500 sm:text-lg">(NS-Shaft)</span>
           </div>
-          <p className="text-xs sm:text-lg md:text-xl font-medium tracking-[0.2em] text-gray-400 drop-shadow-sm">
-            CLASSIC ARCADE SURVIVAL
+          <p className="text-xs font-medium tracking-[0.18em] text-gray-400 drop-shadow-sm sm:text-sm">
+            DESCEND · REACT · SURVIVE
           </p>
         </div>
 
         {/* 遊戲區域（大型機台風格） */}
-        <div className="flex justify-center mb-6 sm:mb-12">
-          <div className="relative group w-full max-w-[min(100%,30rem)] sm:max-w-[34rem]">
+        <div className="mb-6 flex justify-center sm:mb-8">
+          <div
+            className="group relative w-full"
+            style={{ maxWidth: "min(100%, calc(42.75vh + 3rem), 34rem)" }}
+          >
             {/* 發光特效 */}
             <div className="absolute -inset-1 sm:-inset-1.5 bg-gradient-to-r from-rose-500 via-purple-500 to-cyan-500 rounded-[32px] sm:rounded-[40px] opacity-30 group-hover:opacity-50 blur-xl transition duration-500" />
             
@@ -292,12 +407,19 @@ export default function KidsStairRushPage() {
               <div className="w-20 sm:w-24 h-1.5 bg-gray-800 rounded-full mx-auto mb-3 sm:mb-4 border-b border-white/5" />
               
               {/* 螢幕主體 */}
-              <div className="relative overflow-hidden rounded-xl sm:rounded-2xl border-[4px] sm:border-[8px] border-black bg-black shadow-[inset_0_0_20px_rgba(255,255,255,0.05)]">
+              <div
+                className="relative mx-auto aspect-[3/4] overflow-hidden rounded-xl border-[4px] border-black bg-black shadow-[inset_0_0_20px_rgba(255,255,255,0.05)] sm:rounded-2xl sm:border-[8px]"
+                style={{ width: "min(100%, 42.75vh, 30rem)" }}
+              >
                 <canvas
                   ref={canvasRef}
                   width={CANVAS_WIDTH}
                   height={CANVAS_HEIGHT}
-                  className="block w-full max-w-full select-none touch-none"
+                  role="application"
+                  aria-label={`Kids Stair Rush，地下 ${liveState.floor} 樓，體力 ${liveState.hp}，連續落地 ${liveState.streak}`}
+                  aria-describedby="kids-stair-status"
+                  tabIndex={0}
+                  className="block h-full w-full select-none touch-none focus-visible:outline focus-visible:outline-3 focus-visible:outline-sky-300"
                   style={{
                     boxShadow: '0 0 40px rgba(0,0,0,0.8)',
                     imageRendering: 'pixelated',
@@ -307,10 +429,41 @@ export default function KidsStairRushPage() {
                 <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/[0.03] to-transparent" />
               </div>
               
-              {/* 底部投幣孔/裝飾 */}
-              <div className="mt-4 sm:mt-5 flex justify-center gap-4 sm:gap-6 opacity-30">
-                <div className="w-8 sm:w-10 h-3 bg-red-500/50 rounded-full shadow-[0_0_10px_rgba(239,68,68,0.5)]" />
-                <div className="w-8 sm:w-10 h-3 bg-red-500/50 rounded-full shadow-[0_0_10px_rgba(239,68,68,0.5)]" />
+              <div className="mx-auto mt-4 grid max-w-md grid-cols-4 gap-2 text-center">
+                <GameMetric label="樓層" value={`B${liveState.floor}`} />
+                <GameMetric label="體力" value={`${Math.max(0, liveState.hp)}/10`} />
+                <GameMetric label="連續" value={`${liveState.streak}x`} />
+                <GameMetric label="最高" value={`B${liveState.highScore}`} />
+              </div>
+              <div className="mx-auto mt-2 grid max-w-md gap-2 text-left sm:grid-cols-2">
+                <div className="rounded-xl border border-cyan-400/15 bg-cyan-400/8 px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-2 text-[10px] font-black uppercase tracking-[0.15em] text-cyan-300">
+                    <span>{liveState.pace.label}</span>
+                    <span>{Math.round(liveState.scrollSpeed)} px/s</span>
+                  </div>
+                  <div
+                    className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10"
+                    role="progressbar"
+                    aria-label="下一階段速度進度"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={pacePercent}
+                  >
+                    <div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-amber-300 transition-[width] duration-200" style={{ width: `${pacePercent}%` }} />
+                  </div>
+                  <div className="mt-1.5 text-[11px] font-bold text-slate-400">{paceTarget}</div>
+                </div>
+                <div className="rounded-xl border border-violet-400/15 bg-violet-400/8 px-3 py-2.5">
+                  <div className="text-[10px] font-black uppercase tracking-[0.15em] text-violet-300">下一個落點</div>
+                  <div className="mt-1 text-xs font-bold leading-5 text-violet-50">{landingGuide}</div>
+                </div>
+              </div>
+              <div
+                id="kids-stair-status"
+                aria-live="polite"
+                className="mx-auto mt-2 min-h-9 max-w-md rounded-xl border border-sky-400/15 bg-sky-400/8 px-3 py-2 text-center text-xs font-bold text-sky-100 sm:text-sm"
+              >
+                {statusMessage}
               </div>
             </div>
           </div>
@@ -323,22 +476,31 @@ export default function KidsStairRushPage() {
               <button
                 type="button"
                 onClick={startOrResumeGame}
-                className="rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-600 px-4 py-3 text-sm font-black text-white shadow-lg shadow-emerald-500/20 active:translate-y-px"
+                disabled={liveState.mode === "playing" || liveState.mode === "paused"}
+                className="min-h-12 rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-600 px-4 py-3 text-sm font-black text-white shadow-lg shadow-emerald-500/20 active:translate-y-px disabled:cursor-default disabled:from-emerald-800 disabled:to-emerald-900 disabled:text-emerald-300 disabled:shadow-none"
               >
-                開始 / 繼續
+                {liveState.mode === "gameOver"
+                  ? "重新挑戰"
+                  : liveState.mode === "ready"
+                    ? "開始遊戲"
+                    : "本局進行中"}
               </button>
               <button
                 type="button"
                 onClick={togglePauseFromMobile}
-                className="rounded-xl bg-gradient-to-b from-amber-400 to-amber-600 px-4 py-3 text-sm font-black text-white shadow-lg shadow-amber-500/20 active:translate-y-px"
+                disabled={liveState.mode === "ready" || liveState.mode === "gameOver"}
+                aria-pressed={liveState.mode === "paused"}
+                aria-label={liveState.mode === "paused" ? "繼續遊戲" : "暫停遊戲"}
+                className="min-h-12 rounded-xl bg-gradient-to-b from-amber-400 to-amber-600 px-4 py-3 text-sm font-black text-white shadow-lg shadow-amber-500/20 active:translate-y-px disabled:cursor-not-allowed disabled:from-gray-700 disabled:to-gray-800 disabled:text-gray-500 disabled:shadow-none"
               >
-                暫停 / 繼續
+                {liveState.mode === "paused" ? "繼續遊戲" : "暫停遊戲"}
               </button>
             </div>
 
             <div className="mt-3 grid grid-cols-2 gap-3">
               <button
                 type="button"
+                disabled={liveState.mode !== "playing"}
                 onPointerDown={(e) => {
                   e.preventDefault();
                   setDirectionPressed("left", true);
@@ -355,12 +517,15 @@ export default function KidsStairRushPage() {
                   e.preventDefault();
                   setDirectionPressed("left", false);
                 }}
-                className="rounded-xl border border-sky-400/40 bg-sky-500/15 px-4 py-4 text-base font-black text-sky-100 shadow-inner shadow-sky-500/10 active:bg-sky-500/25"
+                aria-label="向左移動"
+                className="min-h-14 rounded-xl border border-sky-400/40 bg-sky-500/15 px-4 py-4 text-base font-black text-sky-100 shadow-inner shadow-sky-500/10 active:bg-sky-500/25 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800/60 disabled:text-slate-600"
               >
+                <span className="i-ph-arrow-left-bold mr-2 inline-flex" aria-hidden="true" />
                 左移
               </button>
               <button
                 type="button"
+                disabled={liveState.mode !== "playing"}
                 onPointerDown={(e) => {
                   e.preventDefault();
                   setDirectionPressed("right", true);
@@ -377,15 +542,31 @@ export default function KidsStairRushPage() {
                   e.preventDefault();
                   setDirectionPressed("right", false);
                 }}
-                className="rounded-xl border border-sky-400/40 bg-sky-500/15 px-4 py-4 text-base font-black text-sky-100 shadow-inner shadow-sky-500/10 active:bg-sky-500/25"
+                aria-label="向右移動"
+                className="min-h-14 rounded-xl border border-sky-400/40 bg-sky-500/15 px-4 py-4 text-base font-black text-sky-100 shadow-inner shadow-sky-500/10 active:bg-sky-500/25 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800/60 disabled:text-slate-600"
               >
                 右移
+                <span className="i-ph-arrow-right-bold ml-2 inline-flex" aria-hidden="true" />
               </button>
             </div>
 
             <p className="mt-3 text-center text-xs leading-relaxed text-gray-400">
               也可以直接點住遊戲畫面左半 / 右半來移動。
             </p>
+          </div>
+        </div>
+
+        <div className="mx-auto mb-8 max-w-4xl rounded-2xl border border-white/8 bg-[#11141d] p-4 sm:p-5">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-sm font-black tracking-wide text-white sm:text-base">看顏色選落點</h2>
+            <span className="text-[10px] font-bold tracking-wider text-gray-500 sm:text-xs">越深平台越窄、速度越快</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-5">
+            <PlatformLegend color="bg-emerald-400" label="綠色" detail="安全 +1 HP" />
+            <PlatformLegend color="bg-slate-300" label="銀色" detail="尖刺 -5 HP" />
+            <PlatformLegend color="bg-amber-400" label="黃色" detail="彈簧反彈" />
+            <PlatformLegend color="bg-sky-400" label="藍色" detail="輸送帶推動" />
+            <PlatformLegend color="bg-rose-400" label="粉色" detail="短暫後崩落" />
           </div>
         </div>
 
@@ -406,6 +587,9 @@ export default function KidsStairRushPage() {
                 <div className="flex gap-2">
                 <kbd className="inline-flex items-center justify-center bg-gray-200 border border-gray-300 border-b-[3px] rounded-md px-3 py-1.5 text-sm font-mono font-bold text-gray-800 shadow-sm min-w-[5rem]">
                   SPACE
+                </kbd>
+                <kbd className="inline-flex items-center justify-center rounded-md border border-gray-300 border-b-[3px] bg-gray-200 px-3 py-1.5 font-mono text-sm font-bold text-gray-800 shadow-sm">
+                  P
                 </kbd>
               </div>
                 <span className="text-gray-400 flex-1">開始 / 暫停 / 重新遊戲，行動裝置可直接點按螢幕</span>

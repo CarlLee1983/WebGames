@@ -3,7 +3,7 @@
   "chapter": 2,
   "title": "Sunken Treasury",
   "mode": "treasure",
-  "description": "A raycast chapter where the center line must hit the chest to collect the relic and unlock the gate.",
+  "description": "Follow the relic signal through the flooded vault, recover the ancient cache, and unlock the treasury door.",
   "glbUrl": "/WebGames/games/babylon-rpg/maps/chapter-2-treasure.glb",
   "hasGlb": false,
   "playerSpawn": { "x": 0, "y": 1.25, "z": -10, "yaw": 0 },

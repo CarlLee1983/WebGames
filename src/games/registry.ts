@@ -23,7 +23,7 @@ export const GAME_REGISTRY: GameDef[] = [
   {
     id: "snake",
     title: "Snake",
-    description: "Classic retro game. Control the snake, eat the food, and avoid hitting the walls or yourself.",
+    description: "Race through wrap portals, collect every fifth golden fruit, and grow a high-scoring circuit without folding into your tail.",
     icon: "i-ph-snake-duotone",
     href: "/games/snake",
     color: "bg-green-500",
@@ -33,7 +33,7 @@ export const GAME_REGISTRY: GameDef[] = [
   {
     id: "memory-match",
     title: "Memory Match",
-    description: "Test your memory by finding matching pairs of cards.",
+    description: "Map a cosmic card archive, protect matching streaks, earn star ratings, and improve your best moves across three board sizes.",
     icon: "i-ph-cards-duotone",
     href: "/games/memory-match",
     color: "bg-pink-500",
@@ -43,7 +43,7 @@ export const GAME_REGISTRY: GameDef[] = [
   {
     id: "lights-out",
     title: "Lights Out",
-    description: "A logic puzzle where you must turn off all the lights. Clicking one toggles its neighbors!",
+    description: "Reroute three circuit sizes, chase the target solution, undo experiments, and black out every node with fewer hints.",
     icon: "i-ph-lightbulb-filament-duotone",
     href: "/games/lights-out",
     color: "bg-yellow-500",
@@ -53,7 +53,7 @@ export const GAME_REGISTRY: GameDef[] = [
   {
     id: "tetris",
     title: "Tetris",
-    description: "Stack the falling blocks to clear lines and score points. Don't let them reach the top!",
+    description: "Stack with SRS rotation and hold, chain combo bonuses, chase perfect clears, and react before the danger frame turns critical.",
     icon: "i-ph-squares-four-duotone",
     href: "/games/tetris",
     color: "bg-purple-500",
@@ -63,7 +63,7 @@ export const GAME_REGISTRY: GameDef[] = [
   {
     id: "gomoku",
     title: "Gomoku",
-    description: "The strategy board game where you aim to get five in a row.",
+    description: "Shape intersecting threats on a coordinate board, challenge three AI levels, and reveal the winning five-stone line.",
     icon: "i-ph-circle-duotone",
     href: "/games/gomoku",
     color: "bg-amber-600",
@@ -73,7 +73,7 @@ export const GAME_REGISTRY: GameDef[] = [
   {
     id: "sudoku",
     title: "Sudoku",
-    description: "The classic logic-based number placement puzzle game.",
+    description: "Solve three uniquely generated manuscripts with candidate notes, conflict guidance, undo, hints, and star-rated efficiency.",
     icon: "i-ph-grid-nine-duotone",
     href: "/games/sudoku",
     color: "bg-blue-500",
@@ -83,7 +83,7 @@ export const GAME_REGISTRY: GameDef[] = [
   {
     id: "zookeeper",
     title: "Zookeeper",
-    description: "Chain together matching zoo animals, trigger reshuffles, and hit the target score in a solo safari puzzle run.",
+    description: "Price every growing animal chain, protect the open Gold path, and reach 1500 points through a reshuffling puzzle safari.",
     icon: "i-ph-paw-print-duotone",
     href: "/games/zookeeper",
     color: "bg-emerald-500",
@@ -93,7 +93,7 @@ export const GAME_REGISTRY: GameDef[] = [
   {
     id: "puzzle-bobble",
     title: "Puzzle Bobble",
-    description: "Aim, bounce, and match colorful bubbles before the descending ceiling reaches the cannon.",
+    description: "Bank guided shots, drop unsupported clusters, protect a rising chain, and read the pressure before the neon ceiling closes in.",
     icon: "i-ph-circles-three-duotone",
     href: "/games/puzzle-bobble",
     color: "bg-fuchsia-500",
@@ -109,7 +109,7 @@ export const GAME_REGISTRY: GameDef[] = [
   {
     id: "kids-stair-rush",
     title: "Kids Stair Rush",
-    description: "Help the little one dash down the stairs! Dodge obstacles and react fast as the stairs speed up.",
+    description: "Read the next color-coded landing, protect your streak and health, and adapt before each major speed surge in the accelerating shaft.",
     icon: "i-ph-stairs-duotone",
     href: "/games/kids-stair-rush",
     color: "bg-sky-500",
@@ -119,7 +119,7 @@ export const GAME_REGISTRY: GameDef[] = [
   {
     id: "farm",
     title: "Farm",
-    description: "Grow crops, water them, and harvest for coins and XP! A relaxing pixel farming game.",
+    description: "Cultivate a seasonal pixel farm, fulfill timed market orders, grow the field through harvest XP, and tend crops across real-world weather cycles.",
     icon: "i-ph-leaf-duotone",
     href: "/games/farm",
     color: "bg-green-600",
@@ -129,7 +129,7 @@ export const GAME_REGISTRY: GameDef[] = [
   {
     id: "battleship-blitz",
     title: "Battleship Blitz",
-    description: "A retro arcade space shooter! Dodge bullets, destroy enemies, and collect power-ups to survive the waves.",
+    description: "Defend the fleet through escalating formations, chain kills across four upgradeable weapons, and confront a patterned mothership every fifth wave.",
     icon: "i-ph-rocket-duotone",
     href: "/games/battleship-blitz",
     color: "bg-cyan-500",
@@ -139,7 +139,7 @@ export const GAME_REGISTRY: GameDef[] = [
   {
     id: "fire-emblem",
     title: "Fire Emblem",
-    description: "A compact tactics skirmish with movement ranges, terrain bonuses, enemy counterattacks, and a boss objective.",
+    description: "Read enemy threat zones and combat forecasts, coordinate three distinct units across terrain, and break the Dread Lord's siege without losing your Lord.",
     icon: "i-ph-chess-knight-duotone",
     href: "/games/fire-emblem",
     color: "bg-rose-600",
@@ -149,7 +149,7 @@ export const GAME_REGISTRY: GameDef[] = [
   {
     id: "babylon-rpg",
     title: "Babylon RPG",
-    description: "A Zelda-style Babylon.js foundation with JSON-driven chapters, tag-based interactions, and IndexedDB saves.",
+    description: "Track the nearest objective, read enemy pursuit and sword range, recover persistent relics, and conquer three procedural 3D realms.",
     icon: "i-ph-sword-duotone",
     href: "/games/babylon-rpg",
     color: "bg-cyan-600",
@@ -179,7 +179,7 @@ export const GAME_REGISTRY: GameDef[] = [
   {
     id: "city-builder",
     title: "City Builder",
-    description: "規劃道路、興建住宅、接通電力，打造屬於你的繁榮城市！",
+    description: "用即時服務範圍規劃道路與街區，在電力、供水、幸福度與收支之間養成一座大都會。",
     icon: "i-ph-buildings-duotone",
     href: "/games/city-builder",
     color: "bg-teal-500",
@@ -189,7 +189,7 @@ export const GAME_REGISTRY: GameDef[] = [
   {
     id: "battle-city",
     title: "Battle City",
-    description: "Classic retro tank battle game. Destroy enemy tanks, collect power-ups, and defend your base!",
+    description: "駕駛可升級戰車穿越五區防線，攔截敵軍、搶奪六種戰場補給並守住中央鷹堡。",
     icon: "i-ph-tank-duotone",
     href: "/games/battle-city",
     color: "bg-red-600",
@@ -199,7 +199,7 @@ export const GAME_REGISTRY: GameDef[] = [
   {
     id: "ice-blocks",
     title: "Ice Blocks",
-    description: "接住從天而降的冰塊，疊得越高分數越高！",
+    description: "接住冰塊與稀有金塊，觀察即時連擊價值再粉碎得分，並閃避會清空冰桶的火球。",
     icon: "i-ph-ice-cream-duotone",
     href: "/games/ice-blocks",
     color: "bg-sky-400",
@@ -209,7 +209,7 @@ export const GAME_REGISTRY: GameDef[] = [
   {
     id: "monopoly",
     title: "Monopoly",
-    description: "經典大富翁遊戲！購買地產、收租金、與對手競爭！",
+    description: "雙人擲骰買地、比較租金率與現金水位，在事件卡與收租攻防中壓垮對手。",
     icon: "i-ph-house-duotone",
     href: "/games/monopoly",
     color: "bg-indigo-500",
@@ -219,7 +219,7 @@ export const GAME_REGISTRY: GameDef[] = [
   {
     id: "whack-a-mole",
     title: "Whack-A-Mole",
-    description: "經典童趣打地鼠！考驗反應速度，注意戴著鋼盔的狡猾地鼠！",
+    description: "敲擊九宮格地鼠、連打破除鋼盔，守住連擊並挑戰十關逐步加速的分數目標。",
     icon: "i-ph-hammer-duotone",
     href: "/games/whack-a-mole",
     color: "bg-lime-600",
@@ -229,7 +229,7 @@ export const GAME_REGISTRY: GameDef[] = [
   {
     id: "deep-sea-penguin",
     title: "Deep Sea Penguin",
-    description: "Dive into the deep sea! Dodge jellyfish and collect fish in this cute underwater adventure.",
+    description: "Read each approaching current surge, collect golden fish, and dodge newly unlocked deep-sea hazards under a brief recovery shield.",
     icon: "i-ph-waves-duotone",
     href: "/games/deep-sea-penguin",
     color: "bg-blue-600",

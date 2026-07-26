@@ -58,9 +58,9 @@ const LEVEL_1: GameMap = {
   playerSpawn: { x: 1, y: 23 }, // Bottom-left (grid coords)
   basePosition: { x: 12, y: 23 }, // Bottom-center (grid coords)
   enemySpawns: [
-    { x: 12, y: 1 }, // Top-center
-    { x: 1, y: 1 }, // Top-left
-    { x: 24, y: 1 }, // Top-right
+    { x: 4, y: 1 }, // Top-left corridor
+    { x: 12, y: 2 }, // Top-center corridor
+    { x: 20, y: 1 }, // Top-right corridor
   ],
 };
 

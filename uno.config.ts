@@ -14,6 +14,11 @@ export default defineConfig({
     transformerVariantGroup(),
   ],
   content: {
+    filesystem: [
+      'src/**/*.{html,js,ts,jsx,tsx,mdx,md}',
+      'public/**/*.{html,js,ts,jsx,tsx,mdx,md}',
+      '!public/games/babylon-rpg/runtime.js',
+    ],
     pipeline: {
       exclude: [
         'node_modules',
@@ -22,8 +27,10 @@ export default defineConfig({
         '.worktree',
         'out',
         'build',
+        'public/games/babylon-rpg/runtime.js',
         '**/.next/**',
         '**/.worktree/**',
+        '**/public/games/babylon-rpg/runtime.js',
       ],
     }
   },

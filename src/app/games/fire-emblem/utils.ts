@@ -52,7 +52,17 @@ export interface GameState {
   phaseTimer: number;
 }
 
-type Point = { x: number; y: number };
+export type Point = { x: number; y: number };
+
+export interface CombatForecast {
+  attackerId: string;
+  defenderId: string;
+  attackerDamage: number;
+  defenderDamage: number;
+  defenderCanCounter: boolean;
+  attackerHpAfter: number;
+  defenderHpAfter: number;
+}
 
 const TERRAIN_MAP: Terrain[][] = [
   ["plain", "plain", "plain", "plain", "plain", "plain", "plain", "plain"],
@@ -444,6 +454,59 @@ function applyDamage(units: Unit[], attacker: Unit, defender: Unit) {
 function canCounterattack(attacker: Unit, defender: Unit) {
   const distance = Math.abs(attacker.x - defender.x) + Math.abs(attacker.y - defender.y);
   return distance >= defender.attackMin && distance <= defender.attackMax;
+}
+
+export function getCombatForecast(
+  state: GameState,
+  attackerId: string,
+  defenderId: string,
+): CombatForecast | null {
+  const attacker = getUnitById(state, attackerId);
+  const defender = getUnitById(state, defenderId);
+  if (!attacker || !defender || !attacker.alive || !defender.alive || attacker.side === defender.side) {
+    return null;
+  }
+
+  const distance = Math.abs(attacker.x - defender.x) + Math.abs(attacker.y - defender.y);
+  if (distance < attacker.attackMin || distance > attacker.attackMax) return null;
+
+  const attackerDamage = damageTo(attacker, defender);
+  const defenderHpAfter = Math.max(0, defender.hp - attackerDamage);
+  const defenderCanCounter = defenderHpAfter > 0 && canCounterattack(attacker, defender);
+  const defenderDamage = defenderCanCounter ? damageTo(defender, attacker) : 0;
+
+  return {
+    attackerId,
+    defenderId,
+    attackerDamage,
+    defenderDamage,
+    defenderCanCounter,
+    attackerHpAfter: Math.max(0, attacker.hp - defenderDamage),
+    defenderHpAfter,
+  };
+}
+
+export function getEnemyThreatTiles(state: GameState): Point[] {
+  const threatened = new Map<string, Point>();
+  const enemies = state.units.filter((unit) => unit.alive && unit.side === "enemy");
+
+  enemies.forEach((enemy) => {
+    const origins = getReachableTiles(state, enemy.id);
+    origins.forEach((origin) => {
+      for (let distance = enemy.attackMin; distance <= enemy.attackMax; distance += 1) {
+        for (let dx = -distance; dx <= distance; dx += 1) {
+          const dy = distance - Math.abs(dx);
+          [dy, -dy].forEach((offsetY) => {
+            const point = { x: origin.x + dx, y: origin.y + offsetY };
+            if (!inBounds(point.x, point.y) || terrainAt(point.x, point.y) === "wall") return;
+            threatened.set(keyOf(point), point);
+          });
+        }
+      }
+    });
+  });
+
+  return [...threatened.values()].sort((a, b) => a.y - b.y || a.x - b.x);
 }
 
 function resolveAttack(state: GameState, attackerId: string, defenderId: string): GameState {

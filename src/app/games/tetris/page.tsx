@@ -21,8 +21,10 @@ import {
   ROWS,
   boardToRows,
   createInitialState,
+  getDangerLevel,
   getDropInterval,
   getGhostY,
+  getLinesUntilNextLevel,
   hardDrop,
   holdPiece,
   movePiece,
@@ -46,6 +48,13 @@ type UiSnapshot = {
   score: number;
   level: number;
   lines: number;
+  combo: number;
+  bestCombo: number;
+  piecesPlaced: number;
+  clearMessage: string | null;
+  lastScoreGain: number;
+  dangerLevel: ReturnType<typeof getDangerLevel>;
+  linesUntilLevel: number;
   nextPiece: PieceType | null;
   holdPiece: PieceType | null;
   canHold: boolean;
@@ -222,6 +231,14 @@ function renderGameToText(state: GameState): string {
     score: state.score,
     level: state.level,
     lines: state.lines,
+    combo: state.combo,
+    bestCombo: state.bestCombo,
+    piecesPlaced: state.piecesPlaced,
+    lastClear: state.lastClear,
+    lastScoreGain: state.lastScoreGain,
+    clearMessage: state.clearMessage,
+    dangerLevel: getDangerLevel(state.board),
+    linesUntilLevel: getLinesUntilNextLevel(state.lines),
     hold: state.hold,
     canHold: state.canHold,
     dropIntervalMs: getDropInterval(state.level),
@@ -272,6 +289,20 @@ function drawScene(ctx: CanvasRenderingContext2D, state: GameState) {
 
   fillRoundedRect(ctx, BOARD_LEFT - 10, BOARD_TOP - 10, BOARD_WIDTH + 20, BOARD_HEIGHT + 20, 24, "#0f172a");
   fillRoundedRect(ctx, BOARD_LEFT, BOARD_TOP, BOARD_WIDTH, BOARD_HEIGHT, 18, "#111827");
+
+  const dangerLevel = getDangerLevel(state.board);
+  if (dangerLevel !== "safe") {
+    strokeRoundedRect(
+      ctx,
+      BOARD_LEFT - 6,
+      BOARD_TOP - 6,
+      BOARD_WIDTH + 12,
+      BOARD_HEIGHT + 12,
+      22,
+      dangerLevel === "critical" ? "#fb7185" : "#fbbf24",
+      dangerLevel === "critical" ? 5 : 3,
+    );
+  }
 
   ctx.strokeStyle = "rgba(148, 163, 184, 0.14)";
   ctx.lineWidth = 1;
@@ -366,12 +397,15 @@ function drawScene(ctx: CanvasRenderingContext2D, state: GameState) {
     ctx.fillText(`${index + 1}. ${piece}`, PANEL_LEFT + 18, QUEUE_PANEL_Y + 50 + index * 16);
   });
 
-  if (state.lastClear > 0 && state.mode === "playing") {
-    fillRoundedRect(ctx, BOARD_LEFT + 48, BOARD_TOP + 22, BOARD_WIDTH - 96, 44, 18, "rgba(250, 204, 21, 0.96)");
+  if (state.clearMessage && state.feedbackRemainingMs > 0 && state.mode === "playing") {
+    fillRoundedRect(ctx, BOARD_LEFT + 36, BOARD_TOP + 20, BOARD_WIDTH - 72, 58, 20, "rgba(250, 204, 21, 0.97)");
     ctx.fillStyle = "#0f172a";
-    ctx.font = "800 18px var(--font-geist-sans), sans-serif";
+    ctx.font = "800 17px var(--font-geist-sans), sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(`${state.lastClear} line${state.lastClear > 1 ? "s" : ""} cleared`, BOARD_LEFT + BOARD_WIDTH / 2, BOARD_TOP + 50);
+    ctx.fillText(state.clearMessage, BOARD_LEFT + BOARD_WIDTH / 2, BOARD_TOP + 45);
+    ctx.fillStyle = "#92400e";
+    ctx.font = "700 12px var(--font-geist-sans), sans-serif";
+    ctx.fillText(`+${state.lastScoreGain} points`, BOARD_LEFT + BOARD_WIDTH / 2, BOARD_TOP + 64);
     ctx.textAlign = "left";
   }
 
@@ -405,7 +439,8 @@ function drawScene(ctx: CanvasRenderingContext2D, state: GameState) {
       ctx.fillText(`Final score ${state.score}`, BOARD_LEFT + BOARD_WIDTH / 2, BOARD_TOP + 200);
       ctx.fillStyle = "#cbd5e1";
       ctx.font = "500 16px var(--font-geist-sans), sans-serif";
-      ctx.fillText("Press Enter or Restart to spin up a new seeded run.", BOARD_LEFT + BOARD_WIDTH / 2, BOARD_TOP + 232);
+      ctx.fillText(`Best combo ${state.bestCombo} · ${state.piecesPlaced} pieces placed`, BOARD_LEFT + BOARD_WIDTH / 2, BOARD_TOP + 230);
+      ctx.fillText("Press Enter or New Run to spin up a fresh stack.", BOARD_LEFT + BOARD_WIDTH / 2, BOARD_TOP + 258);
     }
 
     fillRoundedRect(ctx, BOARD_LEFT + 74, BOARD_TOP + 286, BOARD_WIDTH - 148, 46, 16, "#f59e0b");
@@ -422,6 +457,13 @@ function makeSnapshot(state: GameState): UiSnapshot {
     score: state.score,
     level: state.level,
     lines: state.lines,
+    combo: state.combo,
+    bestCombo: state.bestCombo,
+    piecesPlaced: state.piecesPlaced,
+    clearMessage: state.clearMessage,
+    lastScoreGain: state.lastScoreGain,
+    dangerLevel: getDangerLevel(state.board),
+    linesUntilLevel: getLinesUntilNextLevel(state.lines),
     nextPiece: state.queue[0] ?? null,
     holdPiece: state.hold,
     canHold: state.canHold,
@@ -444,6 +486,13 @@ export default function TetrisGame() {
         previous.score === next.score &&
         previous.level === next.level &&
         previous.lines === next.lines &&
+        previous.combo === next.combo &&
+        previous.bestCombo === next.bestCombo &&
+        previous.piecesPlaced === next.piecesPlaced &&
+        previous.clearMessage === next.clearMessage &&
+        previous.lastScoreGain === next.lastScoreGain &&
+        previous.dangerLevel === next.dangerLevel &&
+        previous.linesUntilLevel === next.linesUntilLevel &&
         previous.nextPiece === next.nextPiece &&
         previous.holdPiece === next.holdPiece &&
         previous.canHold === next.canHold
@@ -459,10 +508,14 @@ export default function TetrisGame() {
     if (!canvas) return;
 
     const dpr = window.devicePixelRatio || 1;
+    const parentWidth = canvas.parentElement?.clientWidth ?? CANVAS_WIDTH;
+    const desktopHeightBudget = Math.max(420, window.innerHeight - 280);
+    const widthFromDesktopHeight = (desktopHeightBudget * CANVAS_WIDTH) / CANVAS_HEIGHT;
     const maxWidth = isFullscreen
       ? Math.min(window.innerWidth - 48, ((window.innerHeight - 48) * CANVAS_WIDTH) / CANVAS_HEIGHT, 860)
-      : Math.min(canvas.parentElement?.clientWidth ?? CANVAS_WIDTH, CANVAS_WIDTH);
-    const displayWidth = Math.max(320, Math.floor(maxWidth));
+      : Math.min(parentWidth, CANVAS_WIDTH, window.innerWidth >= 1024 ? widthFromDesktopHeight : CANVAS_WIDTH);
+    const minWidth = Math.min(320, parentWidth);
+    const displayWidth = Math.max(minWidth, Math.floor(maxWidth));
     const displayHeight = Math.floor((displayWidth * CANVAS_HEIGHT) / CANVAS_WIDTH);
 
     canvas.width = Math.floor(displayWidth * dpr);
@@ -693,130 +746,235 @@ export default function TetrisGame() {
     drawCurrentState();
   }, [drawCurrentState, isFullscreen]);
 
-  const primaryActionLabel = ui.mode === "paused" ? "Resume" : ui.mode === "gameOver" ? "Restart" : "Start";
+  useEffect(() => {
+    const pauseActiveRun = () => {
+      if (stateRef.current.mode === "playing") {
+        commitState(togglePause(stateRef.current));
+      }
+    };
+    const handleVisibilityChange = () => {
+      if (document.hidden) pauseActiveRun();
+    };
+
+    window.addEventListener("blur", pauseActiveRun);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("blur", pauseActiveRun);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [commitState]);
+
+  const handlePrimaryAction = () => {
+    if (ui.mode === "paused") {
+      applyTransform(togglePause);
+    } else {
+      applyTransform(startGame);
+    }
+    canvasRef.current?.focus();
+  };
+
+  const primaryActionLabel =
+    ui.mode === "paused" ? "Resume" : ui.mode === "gameOver" ? "New Run" : ui.mode === "playing" ? "Running" : "Start";
+  const playControlsDisabled = ui.mode !== "playing";
   const holdDisabled = ui.mode !== "playing" || !ui.canHold;
+  const pauseDisabled = ui.mode !== "playing";
+  const modeLabel =
+    ui.mode === "playing" ? "Stack in progress" : ui.mode === "paused" ? "Run paused" : ui.mode === "gameOver" ? "Stack topped out" : "Ready to stack";
+  const dangerLabel = ui.dangerLevel === "critical" ? "Critical stack" : ui.dangerLevel === "warning" ? "High stack" : "Board stable";
 
   return (
-    <div className="py-10 sm:py-14">
+    <div className="min-h-[calc(100vh-5rem)] bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.12),_transparent_34%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] py-4 sm:py-6">
       <Container size="lg">
-        <div className="mx-auto flex max-w-4xl flex-col items-center gap-6">
+        <div className="mx-auto flex max-w-5xl flex-col items-center gap-4">
           <header className="text-center">
-            <h1 className="text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">Tetris</h1>
-            <p className="mt-2 max-w-2xl text-sm text-slate-600 sm:text-base">
-              Classic stacking with hold support, SRS wall kicks, static export safety, and deterministic browser-test hooks.
+            <div className="mb-1 inline-flex items-center gap-2 rounded-full bg-slate-900 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em] text-cyan-300">
+              <span className="i-ph-stack-duotone text-base" /> 7-bag · SRS · Combo scoring
+            </div>
+            <h1 className="text-4xl font-black tracking-tight text-slate-950">Tetris Arcade</h1>
+            <p className="mx-auto mt-1 max-w-3xl text-sm text-slate-600 sm:text-base">
+              Use hold and the ghost piece to chain line clears into bigger combo bonuses.
             </p>
           </header>
 
-          <canvas
-            ref={canvasRef}
-            className="w-full max-w-[520px] rounded-[32px] shadow-[0_24px_80px_rgba(15,23,42,0.18)] outline-none"
-            aria-label="Tetris game canvas"
-          />
+          <div className="grid w-full gap-3 lg:grid-cols-[minmax(320px,520px)_minmax(280px,320px)] lg:items-start lg:justify-center lg:gap-5">
+            <div className="flex min-w-0 justify-center lg:justify-end">
+              <canvas
+                ref={canvasRef}
+                role="application"
+                tabIndex={0}
+                aria-describedby="tetris-status tetris-controls-help"
+                aria-label={`Tetris board. ${modeLabel}. Score ${ui.score}, level ${ui.level}, ${ui.lines} lines, combo ${ui.combo}.`}
+                className="max-w-full touch-none rounded-[32px] shadow-[0_24px_80px_rgba(15,23,42,0.22)] outline-none ring-cyan-400 transition focus-visible:ring-4"
+              />
+            </div>
 
-          <div className="grid w-full max-w-[520px] grid-cols-4 gap-2 sm:gap-3">
-            <button
-              id="tetris-start"
-              type="button"
-              onClick={() => applyTransform(startGame)}
-              className="col-span-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
-            >
-              {primaryActionLabel}
-            </button>
-            <button
-              id="tetris-pause"
-              type="button"
-              onClick={() => applyTransform(togglePause)}
-              className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
-            >
-              {ui.mode === "paused" ? "Resume" : "Pause"}
-            </button>
-            <button
-              id="tetris-restart"
-              type="button"
-              onClick={() => commitState(restartGame())}
-              className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
-            >
-              Restart
-            </button>
+            <aside className="box-border flex min-w-0 flex-col gap-3 rounded-[28px] border border-white/80 bg-white/80 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.12)] backdrop-blur lg:sticky lg:top-24">
+              <div id="tetris-status" aria-live="polite" className="order-2 rounded-2xl bg-slate-950 px-4 py-3 text-white lg:order-1">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-bold">{modeLabel}</span>
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${
+                      ui.dangerLevel === "critical"
+                        ? "bg-rose-400 text-rose-950"
+                        : ui.dangerLevel === "warning"
+                          ? "bg-amber-300 text-amber-950"
+                          : "bg-emerald-300 text-emerald-950"
+                    }`}
+                  >
+                    {dangerLabel}
+                  </span>
+                </div>
+                <p className="mt-2 min-h-5 text-xs text-slate-300">
+                  {ui.clearMessage ? `${ui.clearMessage} · +${ui.lastScoreGain}` : `${ui.linesUntilLevel} lines until level ${ui.level + 1}`}
+                </p>
+                <div
+                  role="progressbar"
+                  aria-label={`Progress to level ${ui.level + 1}`}
+                  aria-valuemin={0}
+                  aria-valuemax={10}
+                  aria-valuenow={10 - ui.linesUntilLevel}
+                  className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-700"
+                >
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-violet-400 transition-[width]"
+                    style={{ width: `${(10 - ui.linesUntilLevel) * 10}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="order-1 grid grid-cols-4 gap-2 lg:order-2">
+                <button
+                  id="tetris-start"
+                  type="button"
+                  onClick={handlePrimaryAction}
+                  disabled={ui.mode === "playing"}
+                  className="col-span-2 min-h-12 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-default disabled:bg-slate-300 disabled:text-slate-600"
+                >
+                  {primaryActionLabel}
+                </button>
+                <button
+                  id="tetris-pause"
+                  type="button"
+                  onClick={() => applyTransform(togglePause)}
+                  disabled={pauseDisabled}
+                  className="min-h-12 rounded-2xl bg-white px-2 py-3 text-sm font-bold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  {ui.mode === "paused" ? "Paused" : "Pause"}
+                </button>
+                <button
+                  id="tetris-restart"
+                  type="button"
+                  onClick={() => {
+                    commitState(restartGame());
+                    canvasRef.current?.focus();
+                  }}
+                  className="min-h-12 rounded-2xl bg-white px-2 py-3 text-sm font-bold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
+                >
+                  Restart
+                </button>
+              </div>
+
+              <div className="order-3 grid grid-cols-4 gap-2">
+                <button
+                  type="button"
+                  onClick={() => applyTransform(holdPiece)}
+                  disabled={holdDisabled}
+                  className="flex h-14 flex-col items-center justify-center rounded-2xl bg-white font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 active:scale-95"
+                >
+                  <span className="i-ph-hand-grabbing-duotone mb-1 text-xl" />
+                  <span className="text-[10px] uppercase tracking-wide">Hold</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyTransform((state) => rotatePiece(state, -1))}
+                  disabled={playControlsDisabled}
+                  className="flex h-14 flex-col items-center justify-center rounded-2xl bg-white font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 active:scale-95"
+                >
+                  <span className="i-ph-arrow-counter-clockwise-bold mb-1 text-xl" />
+                  <span className="text-[10px] uppercase tracking-wide">Rot L</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyTransform((state) => rotatePiece(state, 1))}
+                  disabled={playControlsDisabled}
+                  className="flex h-14 flex-col items-center justify-center rounded-2xl bg-white font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 active:scale-95"
+                >
+                  <span className="i-ph-arrow-clockwise-bold mb-1 text-xl" />
+                  <span className="text-[10px] uppercase tracking-wide">Rot R</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyTransform(hardDrop)}
+                  disabled={playControlsDisabled}
+                  className="flex h-14 flex-col items-center justify-center rounded-2xl bg-cyan-400 font-bold text-cyan-950 shadow-sm transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 active:scale-95"
+                >
+                  <span className="i-ph-caret-double-down-bold mb-1 text-xl" />
+                  <span className="text-[10px] uppercase tracking-wide">Hard</span>
+                </button>
+              </div>
+
+              <div className="order-4 grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  aria-label="Move piece left"
+                  onClick={() => applyTransform((state) => movePiece(state, -1))}
+                  disabled={playControlsDisabled}
+                  className="flex h-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 shadow-inner transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-45 active:scale-95"
+                >
+                  <span className="i-ph-caret-left-bold text-3xl" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Soft drop piece"
+                  onClick={() => applyTransform(softDrop)}
+                  disabled={playControlsDisabled}
+                  className="flex h-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 shadow-inner transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-45 active:scale-95"
+                >
+                  <span className="i-ph-caret-down-bold text-3xl" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Move piece right"
+                  onClick={() => applyTransform((state) => movePiece(state, 1))}
+                  disabled={playControlsDisabled}
+                  className="flex h-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 shadow-inner transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-45 active:scale-95"
+                >
+                  <span className="i-ph-caret-right-bold text-3xl" />
+                </button>
+              </div>
+
+              <dl className="order-5 grid grid-cols-4 gap-2 text-center">
+                {[
+                  ["Score", ui.score, "text-slate-950"],
+                  ["Level", ui.level, "text-violet-600"],
+                  ["Lines", ui.lines, "text-cyan-600"],
+                  ["Combo", ui.combo, "text-amber-600"],
+                ].map(([label, value, color]) => (
+                  <div key={label} className="rounded-2xl bg-white px-1 py-2 shadow-sm ring-1 ring-slate-200">
+                    <dt className="text-[9px] font-bold uppercase tracking-wide text-slate-500">{label}</dt>
+                    <dd className={`mt-1 text-lg font-black ${color}`}>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+
+              <div className="order-6 flex items-center justify-between gap-3 text-xs font-semibold text-slate-500">
+                <span>Best combo {ui.bestCombo}</span>
+                <span>{ui.piecesPlaced} pieces placed</span>
+              </div>
+
+              <div id="tetris-controls-help" className="order-7 flex items-center justify-between gap-3 border-t border-slate-200 pt-3">
+                <p className="text-[11px] leading-4 text-slate-500">Arrows move · Space drops · C holds · P pauses</p>
+                <button
+                  type="button"
+                  onClick={() => void toggleFullscreen()}
+                  className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl bg-slate-100 px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-200"
+                >
+                  <span className={isFullscreen ? "i-ph-arrows-in-bold" : "i-ph-arrows-out-bold"} />
+                  {isFullscreen ? "Exit" : "Fullscreen"}
+                </button>
+              </div>
+            </aside>
           </div>
-
-          {/* Mobile-friendly Virtual Controls */}
-          <div className="flex w-full max-w-[520px] flex-col gap-3">
-            <div className="grid grid-cols-4 gap-2">
-               <button
-                type="button"
-                onClick={() => applyTransform(holdPiece)}
-                disabled={holdDisabled}
-                className="flex h-14 flex-col items-center justify-center rounded-2xl bg-white font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:opacity-50 active:scale-95"
-              >
-                <span className="i-ph-hand-grabbing-duotone mb-1 text-xl" />
-                <span className="text-[10px] uppercase tracking-wide">Hold</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => applyTransform((state) => rotatePiece(state, -1))}
-                className="flex h-14 flex-col items-center justify-center rounded-2xl bg-white font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 active:scale-95"
-              >
-                <span className="i-ph-arrow-counter-clockwise-bold mb-1 text-xl" />
-                <span className="text-[10px] uppercase tracking-wide">Rot L</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => applyTransform((state) => rotatePiece(state, 1))}
-                className="flex h-14 flex-col items-center justify-center rounded-2xl bg-white font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 active:scale-95"
-              >
-                <span className="i-ph-arrow-clockwise-bold mb-1 text-xl" />
-                <span className="text-[10px] uppercase tracking-wide">Rot R</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => applyTransform(hardDrop)}
-                className="flex h-14 flex-col items-center justify-center rounded-2xl bg-cyan-500 font-bold text-cyan-950 shadow-sm transition hover:bg-cyan-400 active:scale-95"
-              >
-                <span className="i-ph-caret-double-down-bold mb-1 text-xl" />
-                <span className="text-[10px] uppercase tracking-wide">Hard</span>
-              </button>
-            </div>
-            
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => applyTransform((state) => movePiece(state, -1))}
-                className="flex h-16 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 shadow-inner transition hover:bg-slate-200 active:scale-95"
-              >
-                <span className="i-ph-caret-left-bold text-3xl" />
-              </button>
-              <button
-                type="button"
-                onClick={() => applyTransform(softDrop)}
-                className="flex h-16 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 shadow-inner transition hover:bg-slate-200 active:scale-95"
-              >
-                <span className="i-ph-caret-down-bold text-3xl" />
-              </button>
-              <button
-                type="button"
-                onClick={() => applyTransform((state) => movePiece(state, 1))}
-                className="flex h-16 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 shadow-inner transition hover:bg-slate-200 active:scale-95"
-              >
-                <span className="i-ph-caret-right-bold text-3xl" />
-              </button>
-            </div>
-          </div>
-
-          <dl className="grid w-full max-w-[520px] grid-cols-3 gap-3 text-center">
-            <div className="rounded-2xl bg-white px-2 py-3 shadow-sm ring-1 ring-slate-200 sm:px-4">
-              <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 sm:text-xs">Score</dt>
-              <dd className="mt-1 text-xl font-bold text-slate-900 sm:text-2xl">{ui.score}</dd>
-            </div>
-            <div className="rounded-2xl bg-white px-2 py-3 shadow-sm ring-1 ring-slate-200 sm:px-4">
-              <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 sm:text-xs">Level</dt>
-              <dd className="mt-1 text-xl font-bold text-violet-600 sm:text-2xl">{ui.level}</dd>
-            </div>
-            <div className="rounded-2xl bg-white px-2 py-3 shadow-sm ring-1 ring-slate-200 sm:px-4">
-              <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 sm:text-xs">Lines</dt>
-              <dd className="mt-1 text-xl font-bold text-cyan-600 sm:text-2xl">{ui.lines}</dd>
-            </div>
-          </dl>
         </div>
       </Container>
     </div>

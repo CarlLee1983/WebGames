@@ -77,6 +77,17 @@ export interface GameState {
   rngSeed: number;
 }
 
+export interface PurchaseDecision {
+  tileId: string;
+  tileName: string;
+  price: number;
+  rent: number;
+  cashBefore: number;
+  cashAfter: number;
+  yieldPercent: number;
+  affordable: boolean;
+}
+
 export type BannerTone = "neutral" | "good" | "warning" | "bad";
 
 export const CANVAS_WIDTH = 800;
@@ -244,6 +255,27 @@ function getCurrentPlayer(state: GameState) {
   return state.players[getCurrentPlayerIndex(state)];
 }
 
+export function getPurchaseDecision(state: GameState): PurchaseDecision | null {
+  if (state.prompt?.kind !== "buy" || !state.prompt.tileId) return null;
+
+  const tile = state.board.find((candidate) => candidate.id === state.prompt?.tileId);
+  const player = getCurrentPlayer(state);
+  if (!tile || !player || tile.price == null) return null;
+
+  const rent = tile.rent ?? 0;
+  const cashAfter = player.money - tile.price;
+  return {
+    tileId: tile.id,
+    tileName: tile.name,
+    price: tile.price,
+    rent,
+    cashBefore: player.money,
+    cashAfter,
+    yieldPercent: tile.price > 0 ? Number(((rent / tile.price) * 100).toFixed(1)) : 0,
+    affordable: cashAfter >= 0,
+  };
+}
+
 function getNextActivePlayerIndex(state: GameState, startIndex: number) {
   if (!state.players.length) return 0;
 
@@ -314,12 +346,26 @@ function resolveLanding(state: GameState) {
     case "property":
     case "station": {
       if (!tile.owner) {
+        const price = tile.price ?? 0;
+        const rent = tile.rent ?? 0;
+        if (player.money < price) {
+          beginPrompt(state, {
+            kind: "event",
+            title: "資金不足",
+            body: `${tile.name} 售價 ${formatMoney(price)}，${player.name} 尚差 ${formatMoney(price - player.money)}。`,
+            autoMs: PROMPT_AUTO_MS,
+          });
+          state.message = `${player.name} 無法負擔 ${tile.name}。`;
+          return;
+        }
+
+        const yieldPercent = price > 0 ? ((rent / price) * 100).toFixed(1) : "0.0";
         beginPrompt(state, {
           kind: "buy",
           title: `買下 ${tile.name}`,
-          body: `價格 ${formatMoney(tile.price ?? 0)}，租金 ${formatMoney(tile.rent ?? 0)}。`,
+          body: `買後保留 ${formatMoney(player.money - price)}；對手停留可收 ${formatMoney(rent)}（租金率 ${yieldPercent}%）。`,
           tileId: tile.id,
-          primaryLabel: "買下",
+          primaryLabel: `${formatMoney(price)} 買下`,
           secondaryLabel: "跳過",
         });
         state.message = `${player.name} 抵達 ${tile.name}。可選擇購買。`;
@@ -793,8 +839,9 @@ export function renderGameToText(state: GameState): string {
           autoMs: state.prompt.autoMs ?? null,
           primaryLabel: state.prompt.primaryLabel ?? null,
           secondaryLabel: state.prompt.secondaryLabel ?? null,
-        }
+      }
       : null,
+    purchaseDecision: getPurchaseDecision(state),
     players: state.players.map((player) => ({
       id: player.id,
       name: player.name,

@@ -1,332 +1,518 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState, type TouchEvent } from "react";
+
 import Container from "@/components/common/Container";
 
-const GRID_SIZE = 20;
-const INITIAL_SNAKE = [{ x: 10, y: 10 }];
-const INITIAL_DIRECTION = { x: 0, y: -1 }; // UP
+import {
+  DIFFICULTY_CONFIG,
+  GRID_SIZE,
+  changeDifficulty,
+  createInitialState,
+  getLevel,
+  getTickInterval,
+  parseBestScore,
+  queueDirection,
+  restartGame,
+  startGame,
+  stateToRows,
+  stepGame,
+  togglePause,
+  type Difficulty,
+  type DirectionName,
+  type Point,
+  type SnakeGameState,
+} from "./utils";
 
-type Point = { x: number; y: number };
-type Difficulty = 'EASY' | 'NORMAL';
+declare global {
+  interface Window {
+    render_game_to_text?: () => string;
+    advanceTime?: (ms: number) => Promise<void> | void;
+  }
+}
 
-const DIFFICULTY_CONFIG = {
-  EASY: { initialSpeed: 250, minSpeed: 80, speedStep: 5 },
-  NORMAL: { initialSpeed: 150, minSpeed: 50, speedStep: 10 }
+const BEST_SCORE_KEY = "web-games:snake:best-score";
+const INITIAL_STATE = createInitialState("normal", 0, () => 0.42);
+const DIRECTIONS: DirectionName[] = ["up", "left", "down", "right"];
+
+const DIRECTION_ROTATION: Record<DirectionName, number> = {
+  right: 0,
+  down: 90,
+  left: 180,
+  up: -90,
 };
 
+const DIRECTION_ICON: Record<DirectionName, string> = {
+  up: "i-ph-caret-up-bold",
+  down: "i-ph-caret-down-bold",
+  left: "i-ph-caret-left-bold",
+  right: "i-ph-caret-right-bold",
+};
+
+function renderGameToText(state: SnakeGameState): string {
+  return JSON.stringify({
+    coordinateSystem: `top-left origin; x increases right 0-${GRID_SIZE - 1}; y increases down 0-${GRID_SIZE - 1}; edges wrap`,
+    mode: state.mode,
+    difficulty: state.difficulty,
+    score: state.score,
+    bestScore: state.bestScore,
+    foodsEaten: state.foodsEaten,
+    level: getLevel(state.foodsEaten),
+    wraps: state.wraps,
+    tickIntervalMs: getTickInterval(state),
+    direction: state.direction,
+    queuedDirection: state.queuedDirection,
+    food: state.food,
+    snakeLength: state.snake.length,
+    snake: state.snake,
+    board: stateToRows(state),
+  });
+}
+
 export default function SnakeGame() {
-  const [snake, setSnake] = useState<Point[]>(INITIAL_SNAKE);
-  const [food, setFood] = useState<Point>({ x: 5, y: 5 });
-  const [gameOver, setGameOver] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [score, setScore] = useState(0);
-  const [difficulty, setDifficulty] = useState<Difficulty>('NORMAL');
-
-  const directionRef = useRef(INITIAL_DIRECTION);
-  const nextDirectionRef = useRef(INITIAL_DIRECTION);
+  const [game, setGame] = useState<SnakeGameState>(INITIAL_STATE);
+  const gameRef = useRef(game);
+  const boardRef = useRef<HTMLDivElement>(null);
   const touchStartRef = useRef<Point | null>(null);
+  const hasLoadedBestRef = useRef(false);
+  const tickInterval = getTickInterval(game);
 
-  const generateFood = useCallback((currentSnake: Point[]) => {
-    let newFood: Point;
-    while (true) {
-      newFood = {
-        x: Math.floor(Math.random() * GRID_SIZE),
-        y: Math.floor(Math.random() * GRID_SIZE),
-      };
-      const onSnake = currentSnake.some(
-        (segment) => segment.x === newFood.x && segment.y === newFood.y
-      );
-      if (!onSnake) break;
-    }
-    setFood(newFood);
+  const commitGame = useCallback((next: SnakeGameState) => {
+    gameRef.current = next;
+    setGame(next);
   }, []);
 
-  const resetGame = useCallback(() => {
-    setSnake(INITIAL_SNAKE);
-    directionRef.current = INITIAL_DIRECTION;
-    nextDirectionRef.current = INITIAL_DIRECTION;
-    setGameOver(false);
-    setIsPaused(false);
-    setScore(0);
-    generateFood(INITIAL_SNAKE);
-  }, [generateFood]);
+  const updateGame = useCallback((transform: (state: SnakeGameState) => SnakeGameState) => {
+    setGame((previous) => {
+      const next = transform(previous);
+      gameRef.current = next;
+      return next;
+    });
+  }, []);
 
-  const changeDirection = useCallback((dir: 'UP' | 'DOWN' | 'LEFT' | 'RIGHT') => {
-    if (gameOver || isPaused) return;
-    const currentDir = directionRef.current;
-    switch (dir) {
-      case "UP":
-        if (currentDir.y !== 1) nextDirectionRef.current = { x: 0, y: -1 };
-        break;
-      case "DOWN":
-        if (currentDir.y !== -1) nextDirectionRef.current = { x: 0, y: 1 };
-        break;
-      case "LEFT":
-        if (currentDir.x !== 1) nextDirectionRef.current = { x: -1, y: 0 };
-        break;
-      case "RIGHT":
-        if (currentDir.x !== -1) nextDirectionRef.current = { x: 1, y: 0 };
-        break;
-    }
-  }, [gameOver, isPaused]);
+  const focusBoard = useCallback(() => {
+    window.requestAnimationFrame(() => boardRef.current?.focus());
+  }, []);
 
-  // Touch handlers for mobile gestures
-  const handleTouchStart = (e: React.TouchEvent) => {
-    const touch = e.touches[0];
+  const handlePrimaryAction = useCallback(() => {
+    updateGame((state) => startGame(state));
+    focusBoard();
+  }, [focusBoard, updateGame]);
+
+  const handleRestart = useCallback(() => {
+    updateGame((state) => restartGame(state));
+    focusBoard();
+  }, [focusBoard, updateGame]);
+
+  const handleDirection = useCallback(
+    (direction: DirectionName) => {
+      updateGame((state) => queueDirection(state, direction));
+      focusBoard();
+    },
+    [focusBoard, updateGame],
+  );
+
+  useEffect(() => {
+    const storedBest = parseBestScore(window.localStorage.getItem(BEST_SCORE_KEY));
+    hasLoadedBestRef.current = true;
+    updateGame((state) => ({
+      ...state,
+      bestScore: Math.max(state.bestScore, storedBest),
+    }));
+  }, [updateGame]);
+
+  useEffect(() => {
+    if (!hasLoadedBestRef.current) return;
+    window.localStorage.setItem(BEST_SCORE_KEY, String(game.bestScore));
+  }, [game.bestScore]);
+
+  useEffect(() => {
+    if (game.mode !== "playing") return;
+    const interval = window.setInterval(() => {
+      updateGame((state) => stepGame(state));
+    }, tickInterval);
+
+    return () => window.clearInterval(interval);
+  }, [game.mode, tickInterval, updateGame]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const directionByKey: Record<string, DirectionName | undefined> = {
+        ArrowUp: "up",
+        w: "up",
+        W: "up",
+        ArrowDown: "down",
+        s: "down",
+        S: "down",
+        ArrowLeft: "left",
+        a: "left",
+        A: "left",
+        ArrowRight: "right",
+        d: "right",
+        D: "right",
+      };
+      const direction = directionByKey[event.key];
+
+      if (direction || [" ", "Enter", "Escape", "p", "P", "r", "R"].includes(event.key)) {
+        event.preventDefault();
+      }
+
+      if (direction) {
+        handleDirection(direction);
+        return;
+      }
+
+      if (event.key === "Enter") {
+        handlePrimaryAction();
+        return;
+      }
+
+      if (event.key === " ") {
+        if (["ready", "gameOver", "won"].includes(gameRef.current.mode)) {
+          handlePrimaryAction();
+        } else {
+          updateGame(togglePause);
+        }
+        return;
+      }
+
+      if (["Escape", "p", "P"].includes(event.key)) {
+        updateGame(togglePause);
+        return;
+      }
+
+      if (["r", "R"].includes(event.key)) {
+        handleRestart();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown, { passive: false });
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleDirection, handlePrimaryAction, handleRestart, updateGame]);
+
+  useEffect(() => {
+    const pauseActiveRun = () => {
+      if (gameRef.current.mode === "playing") {
+        commitGame(togglePause(gameRef.current));
+      }
+    };
+    const handleVisibilityChange = () => {
+      if (document.hidden) pauseActiveRun();
+    };
+
+    window.addEventListener("blur", pauseActiveRun);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("blur", pauseActiveRun);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [commitGame]);
+
+  useEffect(() => {
+    window.render_game_to_text = () => renderGameToText(gameRef.current);
+    window.advanceTime = (ms: number) => {
+      let remaining = Math.max(0, ms);
+      let next = gameRef.current;
+
+      while (next.mode === "playing" && remaining >= getTickInterval(next)) {
+        remaining -= getTickInterval(next);
+        next = stepGame(next);
+      }
+
+      commitGame(next);
+    };
+
+    return () => {
+      delete window.render_game_to_text;
+      delete window.advanceTime;
+    };
+  }, [commitGame]);
+
+  const handleTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0];
     touchStartRef.current = { x: touch.clientX, y: touch.clientY };
   };
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (!touchStartRef.current) return;
-    const touch = e.changedTouches[0];
-    const dx = touch.clientX - touchStartRef.current.x;
-    const dy = touch.clientY - touchStartRef.current.y;
+  const handleTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    if (!start) return;
+
+    const touch = event.changedTouches[0];
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
     const absX = Math.abs(dx);
     const absY = Math.abs(dy);
 
-    if (Math.max(absX, absY) > 30) { // Threshold
-      if (absX > absY) {
-        changeDirection(dx > 0 ? 'RIGHT' : 'LEFT');
-      } else {
-        changeDirection(dy > 0 ? 'DOWN' : 'UP');
+    if (Math.max(absX, absY) < 24) {
+      if (["ready", "paused", "gameOver", "won"].includes(gameRef.current.mode)) {
+        handlePrimaryAction();
       }
+      return;
     }
-    touchStartRef.current = null;
+
+    handleDirection(absX > absY ? (dx > 0 ? "right" : "left") : dy > 0 ? "down" : "up");
   };
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) {
-        e.preventDefault();
-      }
-      if (gameOver) return;
-      if (e.key === " " || e.key === "Escape") {
-        setIsPaused((p) => !p);
-        return;
-      }
-      switch (e.key) {
-        case "ArrowUp":
-        case "w":
-        case "W":
-          changeDirection("UP");
-          break;
-        case "ArrowDown":
-        case "s":
-        case "S":
-          changeDirection("DOWN");
-          break;
-        case "ArrowLeft":
-        case "a":
-        case "A":
-          changeDirection("LEFT");
-          break;
-        case "ArrowRight":
-        case "d":
-        case "D":
-          changeDirection("RIGHT");
-          break;
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown, { passive: false });
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [gameOver, changeDirection]);
+  const changeModeDifficulty = (difficulty: Difficulty) => {
+    updateGame((state) => changeDifficulty(state, difficulty));
+  };
 
-  useEffect(() => {
-    if (gameOver || isPaused) return;
-    const moveSnake = () => {
-      setSnake((prevSnake) => {
-        const currentDir = nextDirectionRef.current;
-        directionRef.current = currentDir;
-        const head = prevSnake[0];
-        
-        // Wrap-around logic
-        const newHead = {
-          x: (head.x + currentDir.x + GRID_SIZE) % GRID_SIZE,
-          y: (head.y + currentDir.y + GRID_SIZE) % GRID_SIZE,
-        };
-
-        if (prevSnake.some((segment) => segment.x === newHead.x && segment.y === newHead.y)) {
-          setGameOver(true);
-          return prevSnake;
-        }
-
-        const newSnake = [newHead, ...prevSnake];
-        if (newHead.x === food.x && newHead.y === food.y) {
-          setScore((s) => s + 10);
-          generateFood(newSnake);
-        } else {
-          newSnake.pop();
-        }
-        return newSnake;
-      });
-    };
-    
-    const config = DIFFICULTY_CONFIG[difficulty];
-    const currentSpeed = Math.max(config.minSpeed, config.initialSpeed - Math.floor(score / 50) * config.speedStep);
-    const intervalId = setInterval(moveSnake, currentSpeed);
-    return () => clearInterval(intervalId);
-  }, [food, gameOver, isPaused, score, difficulty, generateFood]);
+  const primaryLabel =
+    game.mode === "paused" ? "Resume" : game.mode === "gameOver" || game.mode === "won" ? "New Run" : game.mode === "playing" ? "Running" : "Start";
+  const modeLabel =
+    game.mode === "playing"
+      ? "Portal run active"
+      : game.mode === "paused"
+        ? "Run paused"
+        : game.mode === "gameOver"
+          ? "Tail collision"
+          : game.mode === "won"
+            ? "Board conquered"
+            : "Ready at the portal";
+  const level = getLevel(game.foodsEaten);
+  const speed = Math.round((1000 / tickInterval) * 10) / 10;
+  const foodStatus = game.food?.type === "golden" ? "Golden fruit live" : `${5 - (game.foodsEaten % 5)} fruit to gold`;
+  const controlsDisabled = game.mode !== "playing" && game.mode !== "ready";
+  const difficultyDisabled = game.mode === "playing" || game.mode === "paused";
 
   return (
-    <div className="py-12 sm:py-16">
-      <Container size="md">
-        <div className="mb-8 text-center">
-          <h1 className="mb-2 flex items-center justify-center gap-3 text-4xl font-extrabold text-green-600 sm:text-5xl">
-            <span className="i-ph-snake-duotone" /> Snake
-          </h1>
-          <p className="text-gray-600">Now with wrap-around walls! Use Arrows, WASD, or Swipe on mobile.</p>
-        </div>
+    <div className="min-h-[calc(100vh-5rem)] bg-[radial-gradient(circle_at_top_left,_rgba(74,222,128,0.18),_transparent_36%),linear-gradient(180deg,#f8fafc_0%,#ecfdf5_100%)] py-4 sm:py-6">
+      <Container size="lg">
+        <div className="mx-auto flex max-w-5xl flex-col items-center gap-4">
+          <header className="text-center">
+            <div className="mb-1 inline-flex items-center gap-2 rounded-full bg-emerald-950 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-emerald-300">
+              <span className="i-ph-infinity-bold text-base" /> Wrap portals · Golden fruit
+            </div>
+            <h1 className="flex items-center justify-center gap-2 text-4xl font-black tracking-tight text-emerald-950">
+              <span className="i-ph-snake-duotone text-emerald-500" /> Snake Circuit
+            </h1>
+            <p className="mx-auto mt-1 max-w-2xl text-sm text-slate-600 sm:text-base">
+              Cross every edge through a portal, collect every fifth golden fruit, and avoid folding into your own tail.
+            </p>
+          </header>
 
-        <div className="mx-auto flex w-full max-w-2xl flex-col items-center rounded-3xl bg-white p-6 shadow-xl sm:p-8">
-          <div className="mb-6 flex w-full flex-col items-center justify-between gap-4 sm:flex-row">
-            <div className="flex items-center gap-8">
-              <div className="flex flex-col">
-                <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Score</span>
-                <span className="text-3xl font-black text-gray-800">{score}</span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Difficulty</span>
-                <div className="flex overflow-hidden rounded-lg bg-gray-100 p-1">
-                  <button
-                    onClick={() => { setDifficulty('EASY'); resetGame(); }}
-                    className={`px-3 py-1 text-xs font-bold transition ${difficulty === 'EASY' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+          <div className="grid w-full gap-3 lg:grid-cols-[minmax(320px,500px)_minmax(280px,320px)] lg:items-start lg:justify-center lg:gap-5">
+            <div className="flex min-w-0 justify-center lg:justify-end">
+              <div
+                ref={boardRef}
+                role="application"
+                tabIndex={0}
+                aria-describedby="snake-status snake-controls-help"
+                aria-label={`Snake board. ${modeLabel}. Score ${game.score}, best ${game.bestScore}, length ${game.snake.length}, level ${level}.`}
+                onClick={() => {
+                  if (["ready", "paused", "gameOver", "won"].includes(gameRef.current.mode)) {
+                    handlePrimaryAction();
+                  }
+                }}
+                onTouchStart={handleTouchStart}
+                onTouchEnd={handleTouchEnd}
+                className="relative aspect-square max-w-full touch-none overflow-hidden rounded-[30px] border-[6px] border-emerald-950 bg-emerald-950 shadow-[0_24px_70px_rgba(6,78,59,0.25)] outline-none ring-emerald-400 transition focus-visible:ring-4"
+                style={{
+                  width: "min(100%, 460px, calc(100vh - 270px))",
+                  backgroundImage:
+                    "linear-gradient(rgba(52,211,153,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(52,211,153,0.08) 1px, transparent 1px), radial-gradient(circle at center, #0f3b32 0%, #062a24 100%)",
+                  backgroundSize: "5% 5%, 5% 5%, 100% 100%",
+                }}
+              >
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-[5%] bg-gradient-to-b from-cyan-300/25 to-transparent" />
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[5%] bg-gradient-to-t from-cyan-300/25 to-transparent" />
+                <div className="pointer-events-none absolute inset-y-0 left-0 w-[5%] bg-gradient-to-r from-cyan-300/25 to-transparent" />
+                <div className="pointer-events-none absolute inset-y-0 right-0 w-[5%] bg-gradient-to-l from-cyan-300/25 to-transparent" />
+
+                {game.food && (
+                  <div
+                    aria-hidden="true"
+                    className={`absolute z-10 flex items-center justify-center rounded-full ${
+                      game.food.type === "golden"
+                        ? "animate-pulse bg-amber-300 shadow-[0_0_18px_rgba(251,191,36,0.9)]"
+                        : "bg-rose-500 shadow-[0_0_14px_rgba(244,63,94,0.65)]"
+                    }`}
+                    style={{
+                      width: "5%",
+                      height: "5%",
+                      left: `${game.food.x * 5}%`,
+                      top: `${game.food.y * 5}%`,
+                      transform: "scale(0.76)",
+                    }}
                   >
-                    EASY
-                  </button>
-                  <button
-                    onClick={() => { setDifficulty('NORMAL'); resetGame(); }}
-                    className={`px-3 py-1 text-xs font-bold transition ${difficulty === 'NORMAL' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                  >
-                    NORMAL
-                  </button>
-                </div>
+                    <span className={`${game.food.type === "golden" ? "i-ph-star-fill text-amber-800" : "i-ph-apple-logo-fill text-white"} text-[70%]`} />
+                  </div>
+                )}
+
+                {game.snake.map((segment, index) => {
+                  const isHead = index === 0;
+                  const isTail = index === game.snake.length - 1;
+                  return (
+                    <div
+                      key={`${segment.x}-${segment.y}-${index}`}
+                      aria-hidden="true"
+                      className={`absolute flex items-center justify-center ${isHead ? "z-20 rounded-[32%] bg-lime-300" : isTail ? "rounded-full bg-emerald-400" : "rounded-[28%] bg-emerald-400"}`}
+                      style={{
+                        width: "5%",
+                        height: "5%",
+                        left: `${segment.x * 5}%`,
+                        top: `${segment.y * 5}%`,
+                        transform: `scale(${isHead ? 0.96 : isTail ? 0.62 : Math.max(0.7, 0.88 - index * 0.008)})`,
+                        boxShadow: isHead ? "0 0 12px rgba(190,242,100,0.75)" : "inset 0 0 0 1px rgba(255,255,255,0.2)",
+                      }}
+                    >
+                      {isHead && (
+                        <span
+                          className="relative block h-full w-full"
+                          style={{ transform: `rotate(${DIRECTION_ROTATION[game.direction]}deg)` }}
+                        >
+                          <span className="absolute right-[15%] top-[18%] h-[20%] w-[20%] rounded-full bg-emerald-950" />
+                          <span className="absolute bottom-[18%] right-[15%] h-[20%] w-[20%] rounded-full bg-emerald-950" />
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {game.mode !== "playing" && (
+                  <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-emerald-950/80 px-6 text-center text-white backdrop-blur-sm">
+                    <span
+                      className={`mb-2 text-5xl ${
+                        game.mode === "gameOver"
+                          ? "i-ph-warning-octagon-duotone text-rose-300"
+                          : game.mode === "won"
+                            ? "i-ph-trophy-duotone text-amber-300"
+                            : game.mode === "paused"
+                              ? "i-ph-pause-circle-duotone text-cyan-200"
+                              : "i-ph-play-circle-duotone text-lime-300"
+                      }`}
+                    />
+                    <h2 className="text-2xl font-black sm:text-3xl">{modeLabel}</h2>
+                    <p className="mt-2 max-w-xs text-sm text-emerald-100">
+                      {game.mode === "gameOver"
+                        ? `Final score ${game.score} · length ${game.snake.length}`
+                        : game.mode === "won"
+                          ? `Perfect circuit! Final score ${game.score}.`
+                          : game.mode === "paused"
+                            ? "Your position is frozen. Resume when ready."
+                            : "Press Enter, swipe, or choose a direction to begin."}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handlePrimaryAction}
+                      className="mt-5 min-h-12 rounded-2xl bg-lime-300 px-7 py-3 text-sm font-black text-emerald-950 shadow-lg transition hover:bg-lime-200 active:scale-95"
+                    >
+                      {primaryLabel}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
-            <button
-              onClick={resetGame}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-gray-100 px-5 py-2.5 font-bold text-gray-700 transition hover:bg-gray-200 active:scale-95 sm:w-auto"
-            >
-              <span className="i-ph-arrows-clockwise-duotone h-5 w-5" />
-              Restart
-            </button>
-          </div>
 
-          <div 
-            className="relative w-full overflow-hidden rounded-xl border-4 border-gray-100 bg-gray-50 shadow-inner md:max-w-[500px]"
-            style={{ 
-              aspectRatio: '1 / 1',
-              touchAction: 'none' // Prevent scrolling while playing
-            }}
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
-          >
-            {/* Food */}
-            <div
-              className="absolute rounded-full bg-red-500 shadow-sm"
-              style={{
-                width: '5%',
-                height: '5%',
-                left: `${food.x * 5}%`,
-                top: `${food.y * 5}%`,
-                transform: 'scale(0.8)',
-                boxShadow: '0 0 10px rgba(239, 68, 68, 0.6)',
-                zIndex: 5
-              }}
-            />
-
-            {/* Snake */}
-            {snake.map((segment, index) => {
-              const isHead = index === 0;
-              return (
-                <div
-                  key={`${segment.x}-${segment.y}-${index}`}
-                  className={`absolute rounded-sm ${isHead ? 'bg-green-600 z-10' : 'bg-green-400'}`}
-                  style={{
-                    width: '5%',
-                    height: '5%',
-                    left: `${segment.x * 5}%`,
-                    top: `${segment.y * 5}%`,
-                    transform: isHead ? 'scale(1.05)' : 'scale(0.9)',
-                    transition: 'left 0.1s linear, top 0.1s linear'
-                  }}
-                >
-                  {isHead && (
-                    <div className="relative h-full w-full">
-                      <div className="absolute left-[20%] top-[20%] h-[20%] w-[20%] rounded-full bg-white/80" />
-                      <div className="absolute right-[20%] top-[20%] h-[20%] w-[20%] rounded-full bg-white/80" />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            {/* Overlays */}
-            {gameOver && (
-              <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/60 text-white backdrop-blur-sm">
-                <div className="i-ph-skull-duotone mb-2 h-16 w-16 text-red-400" />
-                <h2 className="mb-1 text-3xl font-black text-red-400">Game Over!</h2>
-                <p className="mb-6 text-lg font-medium text-gray-200">Final Score: {score}</p>
+            <aside className="box-border flex min-w-0 flex-col gap-3 rounded-[28px] border border-white/80 bg-white/85 p-4 shadow-[0_18px_60px_rgba(6,78,59,0.12)] backdrop-blur lg:sticky lg:top-24">
+              <div className="order-1 grid grid-cols-4 gap-2 lg:order-2">
                 <button
-                  onClick={resetGame}
-                  className="rounded-xl bg-green-500 px-8 py-3 font-bold text-white shadow-lg shadow-green-500/30 transition hover:-translate-y-1 hover:bg-green-600 active:scale-95"
+                  type="button"
+                  onClick={handlePrimaryAction}
+                  disabled={game.mode === "playing"}
+                  className="col-span-2 min-h-12 rounded-2xl bg-emerald-950 px-4 py-3 text-sm font-black text-white transition hover:bg-emerald-900 disabled:cursor-default disabled:bg-emerald-100 disabled:text-emerald-700"
                 >
-                  Play Again
+                  {primaryLabel}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateGame(togglePause)}
+                  disabled={game.mode !== "playing"}
+                  className="min-h-12 rounded-2xl bg-white px-2 py-3 text-sm font-bold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  {game.mode === "paused" ? "Paused" : "Pause"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRestart}
+                  className="min-h-12 rounded-2xl bg-white px-2 py-3 text-sm font-bold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
+                >
+                  Restart
                 </button>
               </div>
-            )}
-            
-            {isPaused && !gameOver && (
-              <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/40 text-white backdrop-blur-sm">
-                <div className="i-ph-pause-circle-duotone mb-2 h-16 w-16 text-white/80" />
-                <h2 className="text-3xl font-black tracking-widest text-white/90">PAUSED</h2>
-                <p className="mt-2 font-medium text-gray-200">Press Space or Tap to resume</p>
-                <button 
-                  onClick={() => setIsPaused(false)}
-                  className="mt-6 rounded-lg bg-white/20 px-6 py-2 font-bold hover:bg-white/30"
-                >
-                  Resume
-                </button>
-              </div>
-            )}
-          </div>
 
-          {/* D-Pad Controls (Better visible for touch users) */}
-          <div className="mt-8 grid grid-cols-3 gap-2 sm:hidden">
-            <div />
-            <button
-              className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 shadow-sm active:bg-gray-200 active:scale-95 active:bg-green-100 active:text-green-600"
-              onClick={() => changeDirection("UP")}
-              aria-label="Up"
-            >
-              <span className="i-ph-caret-up-bold text-3xl" />
-            </button>
-            <div />
-            <button
-              className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 shadow-sm active:bg-gray-200 active:scale-95 active:bg-green-100 active:text-green-600"
-              onClick={() => changeDirection("LEFT")}
-              aria-label="Left"
-            >
-              <span className="i-ph-caret-left-bold text-3xl" />
-            </button>
-            <button
-              className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 shadow-sm active:bg-gray-200 active:scale-95 active:bg-green-100 active:text-green-600"
-              onClick={() => changeDirection("DOWN")}
-              aria-label="Down"
-            >
-              <span className="i-ph-caret-down-bold text-3xl" />
-            </button>
-            <button
-              className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 shadow-sm active:bg-gray-200 active:scale-95 active:bg-green-100 active:text-green-600"
-              onClick={() => changeDirection("RIGHT")}
-              aria-label="Right"
-            >
-              <span className="i-ph-caret-right-bold text-3xl" />
-            </button>
-          </div>
-          
-          <div className="mt-6 hidden text-center text-sm text-gray-400 sm:block">
-            Tip: Use Arrow keys or WASD to control. Space to pause.
+              <div id="snake-status" aria-live="polite" className="order-2 rounded-2xl bg-emerald-950 px-4 py-3 text-white lg:order-1">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-black">{modeLabel}</span>
+                  <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${game.food?.type === "golden" ? "bg-amber-300 text-amber-950" : "bg-emerald-300 text-emerald-950"}`}>
+                    {foodStatus}
+                  </span>
+                </div>
+                <p className="mt-2 min-h-5 text-xs text-emerald-100">
+                  {game.feedback ?? `Level ${level} · ${speed} moves/sec · ${game.snake.length} segments`}
+                </p>
+              </div>
+
+              <dl className="order-3 grid grid-cols-4 gap-2 text-center">
+                {[
+                  ["Score", game.score, "text-emerald-950"],
+                  ["Best", game.bestScore, "text-violet-600"],
+                  ["Fruit", game.foodsEaten, "text-rose-500"],
+                  ["Level", level, "text-amber-600"],
+                ].map(([label, value, color]) => (
+                  <div key={label} className="rounded-2xl bg-white px-1 py-2 shadow-sm ring-1 ring-slate-200">
+                    <dt className="text-[9px] font-black uppercase tracking-wide text-slate-500">{label}</dt>
+                    <dd className={`mt-1 text-lg font-black ${color}`}>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+
+              <div className="order-4">
+                <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Difficulty</p>
+                <div className="grid grid-cols-3 gap-2 rounded-2xl bg-slate-100 p-1.5">
+                  {(Object.keys(DIFFICULTY_CONFIG) as Difficulty[]).map((difficulty) => (
+                    <button
+                      key={difficulty}
+                      type="button"
+                      onClick={() => changeModeDifficulty(difficulty)}
+                      disabled={difficultyDisabled}
+                      aria-pressed={game.difficulty === difficulty}
+                      className={`min-h-10 rounded-xl px-2 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-55 ${
+                        game.difficulty === difficulty ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                      }`}
+                    >
+                      {DIFFICULTY_CONFIG[difficulty].label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="order-5 mx-auto grid w-fit grid-cols-3 gap-2">
+                <span />
+                <button
+                  type="button"
+                  aria-label="Move up"
+                  onClick={() => handleDirection("up")}
+                  disabled={controlsDisabled}
+                  className="flex h-13 w-16 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-800 shadow-sm ring-1 ring-emerald-100 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-45 active:scale-95"
+                >
+                  <span className="i-ph-caret-up-bold text-2xl" />
+                </button>
+                <span />
+                {DIRECTIONS.slice(1).map((direction) => (
+                  <button
+                    key={direction}
+                    type="button"
+                    aria-label={`Move ${direction}`}
+                    onClick={() => handleDirection(direction)}
+                    disabled={controlsDisabled}
+                    className="flex h-13 w-16 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-800 shadow-sm ring-1 ring-emerald-100 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-45 active:scale-95"
+                  >
+                    <span className={`${DIRECTION_ICON[direction]} text-2xl`} />
+                  </button>
+                ))}
+              </div>
+
+              <div className="order-6 flex items-center justify-between gap-3 text-xs font-semibold text-slate-500">
+                <span>{game.wraps} portal wraps</span>
+                <span>{tickInterval} ms/tick</span>
+              </div>
+
+              <p id="snake-controls-help" className="order-7 border-t border-slate-200 pt-3 text-[11px] leading-4 text-slate-500">
+                Arrows / WASD steer · Space or P pauses · R resets · Swipe or tap the board on touch screens
+              </p>
+            </aside>
           </div>
         </div>
       </Container>

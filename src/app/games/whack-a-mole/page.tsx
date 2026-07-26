@@ -1,431 +1,504 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import Container from "@/components/common/Container";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import Link from "next/link";
-import { generateRandomHoles, MoleState, BASE_SPAWN_RATE, BASE_UP_TIME, HELMET_MOLE_CHANCE, LEVEL_GOALS } from "./utils";
+import Container from "@/components/common/Container";
+import {
+  INTRO_DURATION_MS,
+  LEVEL_GOALS,
+  getLevelProgress,
+  generateRandomHoles,
+  getLevelConfig,
+  createInitialGameState,
+  renderGameToText,
+  whackGameReducer,
+  type MoleState,
+} from "./utils";
+
+declare global {
+  interface Window {
+    render_game_to_text?: () => string;
+  }
+}
+
+type Tone = "hit" | "clank";
+
+function MoleCharacter({
+  holeNumber,
+  mole,
+  onWhack,
+}: {
+  holeNumber: number;
+  mole: MoleState;
+  onWhack: () => void;
+}) {
+  const isUp = mole.status === "up";
+  const label = mole.type === "helmet"
+    ? `Helmet mole in hole ${holeNumber}, ${mole.health} hits remaining`
+    : `Mole in hole ${holeNumber}`;
+
+  return (
+    <button
+      type="button"
+      aria-label={`${label}. Press ${holeNumber} to whack.`}
+      aria-hidden={!isUp}
+      disabled={!isUp}
+      tabIndex={isUp ? 0 : -1}
+      onClick={onWhack}
+      className={`absolute bottom-4 z-10 h-[75px] w-full appearance-none border-0 bg-transparent p-0 transition-transform duration-150 ease-out origin-bottom focus-visible:outline-3 focus-visible:outline-white focus-visible:outline-offset-3 ${
+        mole.status === "up"
+          ? "translate-y-0 scale-100 cursor-pointer opacity-100"
+          : mole.status === "hit"
+            ? "translate-y-3 scale-95 rotate-3 opacity-100"
+            : "-translate-x-1 translate-y-0 scale-100 opacity-100"
+      }`}
+    >
+      <span className="relative block h-full w-full">
+        {mole.type === "helmet" && mole.health === 1 && mole.status === "up" && (
+          <span className="absolute -top-5 left-1/2 z-20 -translate-x-1/2 rounded-full border border-yellow-200 bg-red-500 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-lg">
+            Again!
+          </span>
+        )}
+        <span className="absolute inset-0 overflow-hidden rounded-t-[40px] border-x-4 border-t-4 border-amber-950 bg-amber-800">
+          <span className="absolute bottom-0 left-1/2 h-3/5 w-4/5 -translate-x-1/2 rounded-t-full bg-amber-200/20 blur-sm" />
+        </span>
+
+        <span className="absolute left-0 right-0 top-3 flex flex-col items-center">
+          <span className="mb-2 flex gap-4">
+            {mole.status === "up" && (
+              <>
+                <span className="relative h-2.5 w-2.5 rounded-full bg-black">
+                  <span className="absolute right-0.5 top-0.5 h-1 w-1 rounded-full bg-white/80" />
+                </span>
+                <span className="relative h-2.5 w-2.5 rounded-full bg-black">
+                  <span className="absolute right-0.5 top-0.5 h-1 w-1 rounded-full bg-white/80" />
+                </span>
+              </>
+            )}
+            {mole.status === "hit" && (
+              <>
+                <span className="relative flex h-3 w-3 items-center justify-center rounded-full border-2 border-black">
+                  <span className="absolute h-px w-full rotate-45 bg-black" />
+                  <span className="absolute h-px w-full -rotate-45 bg-black" />
+                </span>
+                <span className="relative flex h-3 w-3 items-center justify-center rounded-full border-2 border-black">
+                  <span className="absolute h-px w-full rotate-45 bg-black" />
+                  <span className="absolute h-px w-full -rotate-45 bg-black" />
+                </span>
+              </>
+            )}
+            {mole.status === "escaped" && (
+              <>
+                <span className="h-1 w-3 rotate-12 rounded-full bg-black" />
+                <span className="h-1 w-3 -rotate-12 rounded-full bg-black" />
+              </>
+            )}
+          </span>
+
+          <span className="relative h-3 w-4 rounded-full bg-pink-400 shadow-inner">
+            <span className="absolute left-1 top-0.5 h-1 w-1 rounded-full bg-white/40" />
+          </span>
+          {mole.status === "escaped" && (
+            <span className="mt-1 h-3 w-4 rounded-full border-b-2 border-pink-500" />
+          )}
+        </span>
+
+        {mole.type === "helmet" && (
+          <span
+            className={`absolute -left-1 -right-1 -top-4 z-10 h-10 rounded-t-[30px] border-x-4 border-t-4 border-yellow-700 bg-gradient-to-b from-yellow-300 to-yellow-500 transition-all duration-300 ${
+              mole.health === 1 ? "-translate-y-24 rotate-[60deg] opacity-0" : ""
+            }`}
+          >
+            <span className="absolute -left-[5%] bottom-0 h-3 w-[110%] rounded-full border-2 border-yellow-800 bg-yellow-600 shadow-md" />
+            <span className="absolute left-2 top-1 h-1.5 w-1/3 rounded-full bg-white/40" />
+          </span>
+        )}
+      </span>
+    </button>
+  );
+}
 
 export default function WhackAMolePage() {
-  const [gameState, setGameState] = useState<"start" | "intro" | "playing" | "gameover" | "win">("start");
-  const [level, setLevel] = useState(1);
-  const [score, setScore] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(30);
-  const [holes, setHoles] = useState<{ id: number; x: number; y: number }[]>([]);
-  const [moles, setMoles] = useState<{ [id: number]: MoleState }>({});
-  const [combo, setCombo] = useState(0);
+  const [game, dispatch] = useReducer(whackGameReducer, undefined, createInitialGameState);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const spawnerRef = useRef<NodeJS.Timeout | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const gameContainerRef = useRef<HTMLDivElement>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
+      setIsFullscreen(document.fullscreenElement === gameContainerRef.current);
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
-  const toggleFullscreen = () => {
-    if (!gameContainerRef.current) return;
-    
-    if (!document.fullscreenElement) {
-      gameContainerRef.current.requestFullscreen().catch((err: any) => {
-        console.error(`Error attempting to enable full-screen mode: ${err.message}`);
-      });
-    } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen();
+  useEffect(() => {
+    return () => {
+      if (audioContextRef.current) void audioContextRef.current.close();
+    };
+  }, []);
+
+  useEffect(() => {
+    window.render_game_to_text = () => renderGameToText(game);
+    return () => {
+      delete window.render_game_to_text;
+    };
+  }, [game]);
+
+  useEffect(() => {
+    if (game.phase !== "intro") return;
+    const introTimer = window.setTimeout(
+      () => dispatch({ type: "INTRO_COMPLETE" }),
+      INTRO_DURATION_MS,
+    );
+    return () => window.clearTimeout(introTimer);
+  }, [game.phase]);
+
+  useEffect(() => {
+    if (game.phase !== "playing") return;
+    const timer = window.setInterval(() => dispatch({ type: "TICK" }), 1_000);
+    return () => window.clearInterval(timer);
+  }, [game.phase]);
+
+  useEffect(() => {
+    if (game.phase !== "playing") return;
+    const motionTimer = window.setInterval(
+      () => dispatch({ type: "ADVANCE_MOLES", now: Date.now() }),
+      80,
+    );
+    return () => window.clearInterval(motionTimer);
+  }, [game.phase]);
+
+  useEffect(() => {
+    if (game.phase !== "playing") return;
+
+    const spawn = () => dispatch({
+      type: "SPAWN",
+      now: Date.now(),
+      holeRoll: Math.random(),
+      typeRoll: Math.random(),
+    });
+    const openingMole = window.setTimeout(spawn, 300);
+    const spawner = window.setInterval(spawn, getLevelConfig(game.level).spawnRate);
+
+    return () => {
+      window.clearTimeout(openingMole);
+      window.clearInterval(spawner);
+    };
+  }, [game.level, game.phase]);
+
+  const playTone = useCallback((tone: Tone) => {
+    if (!soundEnabled) return;
+
+    const context = audioContextRef.current ?? new AudioContext();
+    audioContextRef.current = context;
+    if (context.state === "suspended") void context.resume();
+
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    const now = context.currentTime;
+    oscillator.type = tone === "hit" ? "triangle" : "square";
+    oscillator.frequency.setValueAtTime(tone === "hit" ? 220 : 720, now);
+    oscillator.frequency.exponentialRampToValueAtTime(tone === "hit" ? 110 : 420, now + 0.09);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.12, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(now);
+    oscillator.stop(now + 0.13);
+  }, [soundEnabled]);
+
+  const handleWhack = useCallback((id: number) => {
+    const mole = game.moles[id];
+    if (game.phase !== "playing" || !mole || mole.status !== "up") return;
+    playTone(mole.type === "helmet" && mole.health === 2 ? "clank" : "hit");
+    dispatch({ type: "WHACK", id, now: Date.now() });
+  }, [game.moles, game.phase, playTone]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat) return;
+      const target = event.target;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
+
+      if (event.key.toLowerCase() === "p" && (game.phase === "playing" || game.phase === "paused")) {
+        event.preventDefault();
+        dispatch({ type: game.phase === "playing" ? "PAUSE" : "RESUME" });
+        return;
       }
+
+      if (game.phase === "playing" && /^[1-9]$/.test(event.key)) {
+        event.preventDefault();
+        handleWhack(Number(event.key) - 1);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [game.phase, handleWhack]);
+
+  const startLevel = (level: number) => {
+    dispatch({ type: "START_LEVEL", level, holes: generateRandomHoles() });
+  };
+
+  const toggleFullscreen = async () => {
+    if (!gameContainerRef.current) return;
+
+    try {
+      if (document.fullscreenElement === gameContainerRef.current) {
+        await document.exitFullscreen();
+      } else {
+        await gameContainerRef.current.requestFullscreen();
+      }
+    } catch (error: unknown) {
+      console.error("Unable to change fullscreen mode", error);
     }
   };
 
-  // Audio refs
-  const hitSoundRef = useRef<HTMLAudioElement | null>(null);
-  const clankSoundRef = useRef<HTMLAudioElement | null>(null);
-  const missSoundRef = useRef<HTMLAudioElement | null>(null);
-
-  useEffect(() => {
-    hitSoundRef.current = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU..."); // Placeholder for actual sound
-    clankSoundRef.current = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU..."); 
-    missSoundRef.current = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU...");
-  }, []);
-
-  const playSound = (_type: 'hit' | 'clank' | 'miss') => { void _type;
-    // Basic implementation, will need real sound files or synth
-    // For now, we rely on visual feedback if audio is not fully implemented
+  const togglePause = () => {
+    dispatch({ type: game.phase === "paused" ? "RESUME" : "PAUSE" });
   };
 
-  const startGame = (startLevel = 1) => {
-    setLevel(startLevel);
-    if (startLevel === 1) setScore(0);
-    setGameState("intro");
-    setTimeout(() => {
-      setGameState("playing");
-      setTimeLeft(60);
-      setCombo(0);
-      setHoles(generateRandomHoles());
-      setMoles({});
-    }, 1500);
-  };
-
-  // Game Loop: Spawning Moles
-  useEffect(() => {
-    if (gameState !== "playing") return;
-
-    const currentSpawnRate = Math.max(400, BASE_SPAWN_RATE - (level * 150));
-    const currentUpTime = Math.max(600, BASE_UP_TIME - (level * 200));
-    const currentHelmetChance = Math.min(0.6, HELMET_MOLE_CHANCE + (level * 0.1));
-    const maxMoles = Math.min(4, 1 + Math.floor(level / 2));
-
-    spawnerRef.current = setInterval(() => {
-      setMoles(prevMoles => {
-        const activeMoles = Object.values(prevMoles).filter(m => m.status !== "hiding").length;
-        if (activeMoles >= maxMoles) return prevMoles;
-
-        const availableHoles = holes.filter(h => !prevMoles[h.id] || prevMoles[h.id].status === "hiding");
-        if (availableHoles.length === 0) return prevMoles;
-
-        const randomHole = availableHoles[Math.floor(Math.random() * availableHoles.length)];
-        const isHelmet = Math.random() < currentHelmetChance;
-
-        const newMole: MoleState = {
-          id: randomHole.id,
-          type: isHelmet ? "helmet" : "normal",
-          status: "up",
-          health: isHelmet ? 2 : 1,
-          createdAt: Date.now()
-        };
-
-        // Auto hide after upTime
-        setTimeout(() => {
-          setMoles(current => {
-            const mole = current[newMole.id];
-            if (mole && mole.status === "up" && mole.createdAt === newMole.createdAt) {
-              setCombo(0); // Break combo on miss
-              playSound('miss');
-              return { ...current, [newMole.id]: { ...mole, status: "escaped" } };
-            }
-            return current;
-          });
-
-          // Reset to hiding after escape animation
-          setTimeout(() => {
-             setMoles(current => {
-                const mole = current[newMole.id];
-                if (mole && mole.status === "escaped") {
-                  return { ...current, [newMole.id]: { ...mole, status: "hiding" } };
-                }
-                return current;
-             });
-          }, 800);
-
-        }, currentUpTime);
-
-        return { ...prevMoles, [newMole.id]: newMole };
-      });
-    }, currentSpawnRate);
-
-    return () => {
-      if (spawnerRef.current) clearInterval(spawnerRef.current);
-    };
-  }, [gameState, level, holes]);
-
-  // Timer Loop
-  useEffect(() => {
-    if (gameState !== "playing") return;
-
-    timerRef.current = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          setGameState("gameover");
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [gameState]);
-
-  const handleWhack = (id: number) => {
-    if (gameState !== "playing") return;
-
-    setMoles(prevMoles => {
-      const mole = prevMoles[id];
-      if (!mole || mole.status !== "up") return prevMoles;
-
-      if (mole.type === "helmet" && mole.health === 2) {
-        // Hit helmet
-        playSound('clank');
-        return { ...prevMoles, [id]: { ...mole, health: 1 } };
-      } else {
-        // Hit mole (or final hit on helmet)
-        playSound('hit');
-        const points = mole.type === "helmet" ? 20 : 10;
-        
-        let newScore = score;
-        setScore(s => {
-          newScore = s + points + Math.min(combo * 2, 20);
-          
-          // Check win condition synchronously during the state update
-          if (newScore >= LEVEL_GOALS[level - 1]) {
-            setTimeout(() => {
-              setGameState("win");
-              if (spawnerRef.current) clearInterval(spawnerRef.current);
-              if (timerRef.current) clearInterval(timerRef.current);
-            }, 0);
-          }
-          return newScore;
-        });
-
-        setTimeLeft(t => Math.min(99, t + 0.1));
-        setCombo(c => c + 1);
-        
-        const hitMole = { ...mole, status: "hit" as const };
-        
-        // Hide after hit animation
-        setTimeout(() => {
-            setMoles(current => {
-                const m = current[id];
-                if(m && m.status === "hit" && m.createdAt === hitMole.createdAt) {
-                    return { ...current, [id]: { ...m, status: "hiding" } };
-                }
-                return current;
-            })
-        }, 500);
-
-        return { ...prevMoles, [id]: hitMole };
-      }
-    });
-  };
+  const progress = getLevelProgress(game);
+  const goal = progress.goal;
+  const activeMoles = Object.values(game.moles).filter((mole) => mole.status === "up").length;
+  const statusMessage = game.phase === "paused"
+    ? "Game paused"
+    : game.phase === "playing"
+      ? `${game.timeLeft} seconds left. Score ${game.score}. ${progress.remaining} points to target. Combo ${game.combo}. ${game.misses} escaped. ${activeMoles} active targets.`
+      : game.phase;
 
   return (
-    <Container size="md" className="py-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
+    <Container size="md" className="py-6 sm:py-8">
+      <div className="mb-5 flex items-end justify-between gap-3 sm:mb-6">
+        <div className="min-w-0">
           <Link
             href="/"
             className="inline-flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-gray-900"
           >
-            <div className="i-ph-arrow-left" />
+            <span className="i-ph-arrow-left" aria-hidden="true" />
             Back to Hub
           </Link>
-          <h1 className="mt-2 text-3xl font-bold text-gray-900 flex items-center gap-3">
-            <div className="i-ph-hammer-duotone text-lime-600" />
+          <h1 className="mt-2 flex items-center gap-2 text-2xl font-black text-gray-900 sm:gap-3 sm:text-3xl">
+            <span className="i-ph-hammer-duotone shrink-0 text-lime-600" aria-hidden="true" />
             Whack-A-Mole
           </h1>
         </div>
         <button
+          type="button"
           onClick={toggleFullscreen}
-          className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-bold text-gray-700 shadow-sm border border-gray-200 hover:bg-gray-50 active:scale-95 transition-all"
-          title="Toggle Fullscreen"
+          className="flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 active:scale-95"
+          aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
         >
-          <div className={isFullscreen ? "i-ph-corners-in-bold" : "i-ph-corners-out-bold"} />
-          {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+          <span className={isFullscreen ? "i-ph-corners-in-bold" : "i-ph-corners-out-bold"} aria-hidden="true" />
+          <span className="hidden sm:inline">{isFullscreen ? "Exit Fullscreen" : "Fullscreen"}</span>
         </button>
       </div>
 
-      <div 
+      <div
         ref={gameContainerRef}
-        className={`relative mx-auto max-w-[600px] overflow-hidden rounded-2xl bg-sky-200 shadow-xl border-4 border-lime-700 ${isFullscreen ? 'w-screen h-screen max-w-none rounded-none border-0 flex items-center justify-center bg-sky-300' : ''}`}
+        className={`relative mx-auto max-w-[600px] overflow-hidden border-4 border-lime-800 bg-lime-950 shadow-xl ${
+          isFullscreen
+            ? "flex h-dvh w-screen max-w-none flex-col rounded-none border-0"
+            : "rounded-2xl"
+        }`}
       >
-        {/* Game UI Header */}
-        <div className={`absolute left-0 right-0 top-0 z-10 flex items-center justify-between bg-black/30 px-4 py-2 text-white backdrop-blur-sm ${isFullscreen ? 'top-2 mx-4 rounded-full' : ''}`}>
-          <div className="flex gap-4">
-            <div className="font-bold text-xl drop-shadow-md">Level {level}</div>
-            <div className="font-bold text-xl drop-shadow-md">Score: {score} / {LEVEL_GOALS[level-1] || '???'}</div>
+        <div className="relative z-30 flex flex-wrap items-center gap-2 bg-lime-950 px-3 py-2 text-white sm:px-4">
+          <div className="grid min-w-[230px] flex-1 grid-cols-3 gap-2" aria-label="Game status">
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-lime-300">Level</div>
+              <div className="text-base font-black sm:text-lg">{game.level}</div>
+            </div>
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-lime-300">Score</div>
+              <div className="text-base font-black tabular-nums sm:text-lg">{game.score}<span className="text-xs text-lime-300"> / {goal}</span></div>
+            </div>
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-lime-300">Time</div>
+              <div className={`text-base font-black tabular-nums sm:text-lg ${game.timeLeft <= 5 && game.phase === "playing" ? "animate-pulse text-red-300" : ""}`}>
+                {game.timeLeft}s
+              </div>
+            </div>
           </div>
-          <div className={`font-bold text-xl drop-shadow-md ${timeLeft <= 5 ? 'text-red-400 animate-pulse' : ''}`}>
-            Time: {timeLeft}s
+
+          <div className="flex items-center gap-2">
+            {(game.phase === "playing" || game.phase === "paused") && (
+              <button
+                type="button"
+                onClick={togglePause}
+                className="flex min-h-11 items-center gap-1 rounded-lg bg-white/12 px-3 text-sm font-bold hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-white"
+                aria-label={game.phase === "paused" ? "Resume game" : "Pause game"}
+              >
+                <span className={game.phase === "paused" ? "i-ph-play-fill" : "i-ph-pause-fill"} aria-hidden="true" />
+                {game.phase === "paused" ? "Resume" : "Pause"}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setSoundEnabled((enabled) => !enabled)}
+              className="grid min-h-11 min-w-11 place-items-center rounded-lg bg-white/12 text-lg hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-white"
+              aria-label={soundEnabled ? "Mute sound" : "Enable sound"}
+              aria-pressed={!soundEnabled}
+            >
+              <span className={soundEnabled ? "i-ph-speaker-high-fill" : "i-ph-speaker-slash-fill"} aria-hidden="true" />
+            </button>
           </div>
+          <div className="flex w-full basis-full items-center gap-3 border-t border-white/10 pt-2">
+            <div className="min-w-0 flex-1">
+              <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-lime-200">
+                <span>Level progress</span>
+                <span className="tabular-nums">{progress.percent}% · {progress.remaining.toLocaleString()} left</span>
+              </div>
+              <div
+                role="progressbar"
+                aria-label={`Level ${game.level} score progress`}
+                aria-valuemin={0}
+                aria-valuemax={goal}
+                aria-valuenow={Math.min(game.score, goal)}
+                className="h-2 overflow-hidden rounded-full bg-black/30"
+              >
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-lime-300 to-yellow-300 transition-[width] duration-200"
+                  style={{ width: `${progress.percent}%` }}
+                />
+              </div>
+            </div>
+            <div className="flex shrink-0 gap-1.5 text-center">
+              <div className="min-w-14 rounded-lg bg-white/10 px-2 py-1">
+                <div className="text-[9px] font-bold uppercase tracking-wider text-lime-300">Combo</div>
+                <div className="text-sm font-black tabular-nums">{game.combo}×</div>
+              </div>
+              <div className="min-w-14 rounded-lg bg-white/10 px-2 py-1">
+                <div className="text-[9px] font-bold uppercase tracking-wider text-lime-300">Escaped</div>
+                <div className="text-sm font-black tabular-nums">{game.misses}</div>
+              </div>
+            </div>
+          </div>
+          <p className="sr-only" aria-live="polite">{statusMessage}</p>
         </div>
 
-        {/* Combo Counter */}
-        {combo > 1 && gameState === "playing" && (
-          <div className={`absolute right-4 top-14 z-10 text-2xl font-black text-yellow-400 italic drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] animate-bounce ${isFullscreen ? 'top-16' : ''}`}>
-            {combo}x Combo!
-          </div>
-        )}
-
-        {/* Play Area */}
-        <div 
-          className={`relative h-[600px] w-full bg-lime-500 overflow-hidden select-none ${isFullscreen ? 'aspect-[2/3] max-h-full h-auto shadow-2xl rounded-2xl border-4 border-lime-700' : ''}`}
-          style={{ 
-            backgroundImage: 'radial-gradient(circle, #84cc16 20%, #65a30d 100%)',
-            cursor: gameState === 'playing' ? `url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM0NTFiMDUiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTQuNSAzTDkgOC41bC00LjIzLTQuMjNhMiAyIDAgMCAwLTIuODMgMi44M2w0LjI0IDQuMjRMMiAxNWwuNSAuNWwyIDIgMi0yIDEuNSA0LjVMMTIuNSAyMmwuNS0uNWwxLjUtMS41IDQuMjQgNC4yNGEyIDIgMCAwIDAgMi44My0yLjgzTDE3LjA3IDE3TDIxIDEyLjVsLTEuNS00LjVMMTcgOS41bDQuMjQtNC4yNGEyIDIgMCAwIDAtMi44My0yLjgzTDE0LjUgM3oiLz48L3N2Zz4iKSAxNiAxNiwgYXV0bw==` : 'default'
+        <div
+          className={`relative w-full select-none overflow-hidden bg-lime-500 ${
+            isFullscreen ? "min-h-0 flex-1" : "aspect-[4/5] sm:aspect-[3/2]"
+          }`}
+          style={{
+            backgroundImage: "radial-gradient(circle, #84cc16 20%, #65a30d 100%)",
           }}
         >
-          {/* Environment Decorations (Grass tufts) */}
-          <div className="absolute inset-0 opacity-20 pointer-events-none">
-             {[...Array(15)].map((_, i) => (
-               <div 
-                 key={i} 
-                 className="absolute w-2 h-4 bg-lime-900 rounded-full"
-                 style={{ 
-                   left: `${(i * 137) % 100}%`, 
-                   top: `${(i * 197) % 100}%`,
-                   transform: `rotate(${(i * 45) % 360}deg)` 
-                 }}
-               />
-             ))}
+          <div className="pointer-events-none absolute inset-0 opacity-20" aria-hidden="true">
+            {Array.from({ length: 15 }, (_, index) => (
+              <span
+                key={index}
+                className="absolute h-4 w-2 rounded-full bg-lime-900"
+                style={{
+                  left: `${(index * 137) % 100}%`,
+                  top: `${(index * 197) % 100}%`,
+                  transform: `rotate(${(index * 45) % 360}deg)`,
+                }}
+              />
+            ))}
           </div>
 
-          {gameState === "playing" && holes.map(hole => {
-            const mole = moles[hole.id] || { status: "hiding" };
+          {(game.phase === "playing" || game.phase === "paused") && game.holes.map((hole) => {
+            const mole = game.moles[hole.id];
             return (
-              <div 
+              <div
                 key={hole.id}
-                className="absolute"
-                style={{ 
-                  left: `${hole.x}%`, 
-                  top: `${hole.y}%`,
-                  transform: 'translate(-50%, -50%)',
-                  width: '80px',
-                  height: '80px'
-                }}
+                className="absolute h-20 w-20"
+                style={{ left: `${hole.x}%`, top: `${hole.y}%`, transform: "translate(-50%, -50%)" }}
               >
-                {/* Hole Graphic */}
-                <div className="absolute bottom-0 h-1/2 w-full rounded-full bg-amber-900 shadow-inner" />
-                
-                {/* Mole */}
-                <div 
-                  className={`absolute bottom-4 w-full h-[75px] cursor-pointer transition-transform duration-150 ease-out origin-bottom ${
-                    mole.status === "hiding" ? "translate-y-[100%] scale-0 opacity-0" : 
-                    mole.status === "up" ? "translate-y-0 scale-100 opacity-100" :
-                    mole.status === "hit" ? "translate-y-3 scale-95 opacity-100 rotate-3" :
-                    mole.status === "escaped" ? "translate-y-0 scale-100 opacity-100 -translate-x-1" : ""
-                  }`}
-                  onPointerDown={() => handleWhack(hole.id)}
-                >
-                  <div className="relative w-full h-full">
-                    {/* Mole Body with Texture/Gradient */}
-                    <div className="absolute inset-0 bg-amber-800 rounded-t-[40px] border-b-0 border-x-4 border-t-4 border-amber-950 overflow-hidden">
-                      {/* Belly Patch */}
-                      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-4/5 h-3/5 bg-amber-200/20 rounded-t-full blur-sm" />
-                    </div>
-                    
-                    {/* Face / Expressions (SVG/CSS drawn) */}
-                    <div className="absolute top-3 left-0 right-0 flex flex-col items-center">
-                      {/* Eyes Container */}
-                      <div className="flex gap-4 mb-2">
-                        {mole.status === "up" && (
-                          <>
-                            <div className="w-2.5 h-2.5 rounded-full bg-black relative">
-                              <div className="absolute top-0.5 right-0.5 w-1 h-1 rounded-full bg-white opacity-80" />
-                            </div>
-                            <div className="w-2.5 h-2.5 rounded-full bg-black relative">
-                              <div className="absolute top-0.5 right-0.5 w-1 h-1 rounded-full bg-white opacity-80" />
-                            </div>
-                          </>
-                        )}
-                        {mole.status === "hit" && (
-                          <>
-                             {/* Spiral dizzy eyes */}
-                             <div className="w-3 h-3 border-2 border-black rounded-full flex items-center justify-center relative">
-                                <div className="w-full h-[1px] bg-black rotate-45" />
-                                <div className="w-full h-[1px] bg-black -rotate-45" />
-                             </div>
-                             <div className="w-3 h-3 border-2 border-black rounded-full flex items-center justify-center relative">
-                                <div className="w-full h-[1px] bg-black rotate-45" />
-                                <div className="w-full h-[1px] bg-black -rotate-45" />
-                             </div>
-                          </>
-                        )}
-                        {mole.status === "escaped" && (
-                          <>
-                             {/* Narrowed eyes/mocking */}
-                             <div className="w-3 h-1 bg-black rounded-full rotate-12" />
-                             <div className="w-3 h-1 bg-black rounded-full -rotate-12" />
-                          </>
-                        )}
-                      </div>
-                      
-                      {/* Nose & Snout */}
-                      <div className="w-4 h-3 bg-pink-400 rounded-full shadow-inner relative">
-                         <div className="absolute top-0.5 left-1 w-1 h-1 rounded-full bg-white opacity-40" />
-                      </div>
-
-                      {/* Mouth (only for escape) */}
-                      {mole.status === "escaped" && (
-                        <div className="mt-1 w-4 h-3 border-b-2 border-pink-500 rounded-full" />
-                      )}
-                    </div>
-
-                    {/* Helmet (Refined) */}
-                    {mole.type === "helmet" && (
-                      <div className={`absolute -top-4 -left-1 -right-1 h-10 bg-gradient-to-b from-yellow-300 to-yellow-500 rounded-t-[30px] border-x-4 border-t-4 border-yellow-700 transition-all duration-300 z-10 ${mole.health === 1 ? '-translate-y-24 opacity-0 rotate-[60deg]' : ''}`}>
-                         {/* Helmet Rim */}
-                        <div className="absolute bottom-0 w-[110%] -left-[5%] h-3 bg-yellow-600 rounded-full border-2 border-yellow-800 shadow-md" />
-                        {/* Gloss Effect */}
-                        <div className="absolute top-1 left-2 w-1/3 h-1.5 bg-white/40 rounded-full" />
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Front Grass Cover (Layered for depth) */}
-                <div className="absolute bottom-[-14px] h-8 w-[140%] -left-[20%] rounded-[50%] bg-lime-600 border-t-2 border-lime-700 shadow-md z-20 flex items-center justify-center">
-                    {/* Small grass tuft decoration */}
-                    <div className="w-1 h-3 bg-lime-400 rotate-12 rounded-t-full mb-4" />
-                    <div className="w-1 h-4 bg-lime-400 -rotate-6 rounded-t-full mb-3 mx-1" />
-                    <div className="w-1 h-2 bg-lime-400 rotate-[30deg] rounded-t-full mb-4" />
-                </div>
+                <span className="absolute bottom-0 h-1/2 w-full rounded-full bg-amber-900 shadow-inner" aria-hidden="true" />
+                <span className="absolute -top-2 left-1 z-20 grid h-6 w-6 place-items-center rounded-full bg-lime-950/75 text-xs font-black text-white shadow" aria-hidden="true">
+                  {hole.id + 1}
+                </span>
+                {mole && mole.status !== "hiding" && (
+                  <MoleCharacter
+                    holeNumber={hole.id + 1}
+                    mole={mole}
+                    onWhack={() => handleWhack(hole.id)}
+                  />
+                )}
+                <span className="pointer-events-none absolute -bottom-3.5 -left-[20%] z-20 flex h-8 w-[140%] items-center justify-center rounded-[50%] border-t-2 border-lime-700 bg-lime-600 shadow-md" aria-hidden="true">
+                  <span className="mb-4 h-3 w-1 rotate-12 rounded-t-full bg-lime-400" />
+                  <span className="mx-1 mb-3 h-4 w-1 -rotate-6 rounded-t-full bg-lime-400" />
+                  <span className="mb-4 h-2 w-1 rotate-[30deg] rounded-t-full bg-lime-400" />
+                </span>
               </div>
             );
           })}
 
-          {/* Overlays */}
-          {gameState === "start" && (
-            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm">
-              <div className="i-ph-hammer-duotone text-8xl text-lime-400 mb-6 drop-shadow-lg" />
+          {game.combo > 1 && game.phase === "playing" && (
+            <div className="pointer-events-none absolute right-4 top-4 z-20 animate-bounce text-2xl font-black italic text-yellow-300 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">
+              {game.combo}× combo
+            </div>
+          )}
+
+          {game.phase === "start" && (
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-lime-950/78 px-6 text-center backdrop-blur-sm">
+              <span className="i-ph-hammer-duotone mb-4 text-7xl text-lime-300 drop-shadow-lg sm:text-8xl" aria-hidden="true" />
+              <h2 className="text-3xl font-black text-white">Ready to rumble?</h2>
+              <p className="mt-2 max-w-xs text-sm font-medium text-lime-100">Tap a mole or press its numbered key. Helmet moles need two hits.</p>
               <button
-                onClick={() => startGame(1)}
-                className="rounded-full bg-lime-500 px-8 py-4 text-2xl font-bold text-white shadow-[0_6px_0_#4d7c0f] transition-transform hover:-translate-y-1 hover:shadow-[0_8px_0_#4d7c0f] active:translate-y-2 active:shadow-none"
+                type="button"
+                onClick={() => startLevel(1)}
+                className="mt-6 min-h-12 rounded-full bg-lime-400 px-8 py-3 text-xl font-black text-lime-950 shadow-[0_6px_0_#4d7c0f] transition hover:-translate-y-1 active:translate-y-1 active:shadow-none"
               >
                 Start Game
               </button>
             </div>
           )}
 
-          {gameState === "intro" && (
-            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm">
-              <h2 className="text-6xl font-black text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)] animate-bounce">
-                Level {level}
-              </h2>
-              <p className="mt-4 text-2xl font-bold text-yellow-300 drop-shadow-md">
-                Target: {LEVEL_GOALS[level-1]} pts
-              </p>
+          {game.phase === "intro" && (
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-lime-950/70 px-6 text-center backdrop-blur-sm">
+              <p className="text-sm font-black uppercase tracking-[0.3em] text-lime-200">Round ready</p>
+              <h2 className="mt-2 text-5xl font-black text-white drop-shadow-lg sm:text-6xl">Level {game.level}</h2>
+              <p className="mt-3 text-xl font-bold text-yellow-300">Target: {goal.toLocaleString()} pts</p>
             </div>
           )}
 
-          {gameState === "win" && (
-            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-lime-900/80 backdrop-blur-sm">
-              <h2 className="text-5xl font-black text-white drop-shadow-lg mb-2">Level Cleared!</h2>
-              <p className="text-2xl text-lime-200 mb-8 font-bold">Score: {score}</p>
-              {level < LEVEL_GOALS.length ? (
-                <button
-                  onClick={() => startGame(level + 1)}
-                  className="rounded-full bg-yellow-400 px-8 py-4 text-xl font-bold text-amber-900 shadow-[0_6px_0_#b45309] transition-transform hover:-translate-y-1 active:translate-y-2 active:shadow-none"
-                >
-                  Next Level
-                </button>
-              ) : (
-                <div className="text-3xl font-bold text-yellow-300 animate-pulse">You beat all levels!</div>
-              )}
-            </div>
-          )}
-
-          {gameState === "gameover" && (
-            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-red-900/80 backdrop-blur-sm">
-              <h2 className="text-5xl font-black text-white drop-shadow-lg mb-2">Time&apos;s Up!</h2>
-              <p className="text-2xl text-red-200 mb-8 font-bold">Final Score: {score}</p>
+          {game.phase === "paused" && (
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-lime-950/80 px-6 text-center backdrop-blur-sm">
+              <span className="i-ph-pause-circle-duotone text-7xl text-lime-300" aria-hidden="true" />
+              <h2 className="mt-3 text-4xl font-black text-white">Paused</h2>
+              <p className="mt-2 text-lime-100">Your timer and combo are safe.</p>
               <button
-                onClick={() => startGame(1)}
-                className="rounded-full bg-white px-8 py-4 text-xl font-bold text-red-600 shadow-[0_6px_0_#cbd5e1] transition-transform hover:-translate-y-1 active:translate-y-2 active:shadow-none"
+                type="button"
+                onClick={togglePause}
+                className="mt-6 min-h-12 rounded-full bg-white px-7 py-3 text-lg font-black text-lime-900 shadow-lg"
+              >
+                Resume Game
+              </button>
+            </div>
+          )}
+
+          {game.phase === "win" && (
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-lime-950/84 px-6 text-center backdrop-blur-sm">
+              <span className="i-ph-trophy-duotone text-7xl text-yellow-300" aria-hidden="true" />
+              <h2 className="mt-2 text-4xl font-black text-white sm:text-5xl">
+                {game.level === LEVEL_GOALS.length ? "Champion!" : "Level Cleared!"}
+              </h2>
+              <p className="mt-2 text-xl font-bold text-lime-200">Score: {game.score.toLocaleString()}</p>
+              <button
+                type="button"
+                onClick={() => startLevel(game.level < LEVEL_GOALS.length ? game.level + 1 : 1)}
+                className="mt-7 min-h-12 rounded-full bg-yellow-300 px-8 py-3 text-lg font-black text-amber-950 shadow-[0_6px_0_#b45309] transition active:translate-y-1 active:shadow-none"
+              >
+                {game.level < LEVEL_GOALS.length ? "Next Level" : "Play Again"}
+              </button>
+            </div>
+          )}
+
+          {game.phase === "gameover" && (
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-red-950/84 px-6 text-center backdrop-blur-sm">
+              <span className="i-ph-timer-duotone text-7xl text-red-200" aria-hidden="true" />
+              <h2 className="mt-2 text-4xl font-black text-white sm:text-5xl">Time&apos;s Up!</h2>
+              <p className="mt-2 text-xl font-bold text-red-100">Final score: {game.score.toLocaleString()}</p>
+              <button
+                type="button"
+                onClick={() => startLevel(1)}
+                className="mt-7 min-h-12 rounded-full bg-white px-8 py-3 text-lg font-black text-red-700 shadow-[0_6px_0_#cbd5e1] transition active:translate-y-1 active:shadow-none"
               >
                 Play Again
               </button>
@@ -433,16 +506,14 @@ export default function WhackAMolePage() {
           )}
         </div>
       </div>
-      
-      {/* Rules/Info */}
-      <div className="mx-auto mt-6 max-w-[600px] rounded-xl bg-white p-6 shadow-sm border border-gray-100">
-        <h3 className="text-lg font-bold text-gray-900 mb-2">How to Play</h3>
-        <ul className="list-disc pl-5 space-y-1 text-gray-600">
-          <li>Tap the moles as fast as you can before they escape.</li>
-          <li><strong>Normal Moles:</strong> 1 tap (10 pts)</li>
-          <li><strong>Helmet Moles:</strong> 2 taps (20 pts)</li>
-          <li>Build up your combo by not missing any moles to earn bonus points.</li>
-          <li>Reach the target score before time runs out to advance to the next level.</li>
+
+      <div className="mx-auto mt-6 max-w-[600px] rounded-2xl border border-gray-100 bg-white p-5 shadow-sm sm:p-6">
+        <h2 className="text-lg font-black text-gray-900">How to Play</h2>
+        <ul className="mt-3 space-y-2 text-sm leading-6 text-gray-600 sm:text-base">
+          <li className="flex gap-2"><span className="i-ph-cursor-click-duotone mt-1 shrink-0 text-lime-600" aria-hidden="true" />Tap a visible mole, or press the matching number from 1–9.</li>
+          <li className="flex gap-2"><span className="i-ph-hard-hat-duotone mt-1 shrink-0 text-amber-600" aria-hidden="true" />Normal moles need one hit; helmet moles need two and are worth 20 points.</li>
+          <li className="flex gap-2"><span className="i-ph-lightning-duotone mt-1 shrink-0 text-yellow-600" aria-hidden="true" />Every clean hit grows a combo bonus by 2 points, up to +20. A miss breaks the combo.</li>
+          <li className="flex gap-2"><span className="i-ph-keyboard-duotone mt-1 shrink-0 text-gray-700" aria-hidden="true" />Press <kbd className="font-bold">P</kbd> or use the toolbar to pause without losing time.</li>
         </ul>
       </div>
     </Container>

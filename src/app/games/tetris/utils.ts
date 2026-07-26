@@ -15,6 +15,7 @@ export type PieceType = "I" | "J" | "L" | "O" | "S" | "T" | "Z";
 export type Cell = PieceType | null;
 export type Board = Cell[][];
 export type GameMode = "ready" | "playing" | "paused" | "gameOver";
+export type DangerLevel = "safe" | "warning" | "critical";
 export type RotationDirection = 1 | -1;
 export type RotationState = 0 | 1 | 2 | 3;
 
@@ -45,7 +46,22 @@ export interface GameState {
   level: number;
   lines: number;
   lastClear: number;
+  lastScoreGain: number;
+  clearMessage: string | null;
+  feedbackRemainingMs: number;
+  combo: number;
+  bestCombo: number;
+  piecesPlaced: number;
   dropAccumulator: number;
+}
+
+export interface LineClearResult {
+  combo: number;
+  lineScore: number;
+  comboBonus: number;
+  perfectClearBonus: number;
+  total: number;
+  message: string | null;
 }
 
 export const PIECES: Record<PieceType, PieceDefinition> = {
@@ -146,6 +162,7 @@ const I_KICKS: Record<string, Array<[number, number]>> = {
 const PIECE_ORDER: PieceType[] = ["I", "J", "L", "O", "S", "T", "Z"];
 const LINE_SCORES = [0, 100, 300, 500, 800];
 const DEFAULT_SEED = 1337;
+export const CLEAR_FEEDBACK_MS = 1300;
 
 export function cloneMatrix(matrix: number[][]): number[][] {
   return matrix.map((row) => [...row]);
@@ -284,12 +301,45 @@ function clearLines(board: Board): { board: Board; cleared: number } {
   };
 }
 
+export function getLineClearResult(
+  linesCleared: number,
+  level: number,
+  previousCombo: number,
+  isPerfectClear = false,
+): LineClearResult {
+  const normalizedLines = Math.max(0, Math.min(4, Math.floor(linesCleared)));
+  const normalizedLevel = Math.max(1, Math.floor(level));
+  const combo = normalizedLines > 0 ? previousCombo + 1 : 0;
+  const lineScore = LINE_SCORES[normalizedLines] * normalizedLevel;
+  const comboBonus = combo > 1 ? (combo - 1) * 50 * normalizedLevel : 0;
+  const perfectClearBonus = normalizedLines > 0 && isPerfectClear ? 1200 * normalizedLevel : 0;
+  const clearLabels = [null, "Single", "Double", "Triple", "Tetris"] as const;
+  let message: string | null = clearLabels[normalizedLines];
+
+  if (perfectClearBonus > 0) {
+    message = "Perfect Clear";
+  } else if (message && combo > 1) {
+    message = `${message} · ${combo}× Combo`;
+  }
+
+  return {
+    combo,
+    lineScore,
+    comboBonus,
+    perfectClearBonus,
+    total: lineScore + comboBonus + perfectClearBonus,
+    message,
+  };
+}
+
 function lockActivePiece(state: GameState, scoreBonus = 0): GameState {
   const merged = mergePiece(state.board, state.active);
   const clearedResult = clearLines(merged);
   const totalLines = state.lines + clearedResult.cleared;
   const nextLevel = Math.floor(totalLines / 10) + 1;
-  const scored = state.score + scoreBonus + LINE_SCORES[clearedResult.cleared] * nextLevel;
+  const isPerfectClear = clearedResult.cleared > 0 && clearedResult.board.every((row) => row.every((cell) => cell === null));
+  const clearResult = getLineClearResult(clearedResult.cleared, nextLevel, state.combo, isPerfectClear);
+  const scoreGain = scoreBonus + clearResult.total;
   const nextDraw = takePiece(state.queue, state.rngSeed);
   const nextState: GameState = {
     ...state,
@@ -297,10 +347,16 @@ function lockActivePiece(state: GameState, scoreBonus = 0): GameState {
     active: nextDraw.piece,
     queue: nextDraw.queue,
     rngSeed: nextDraw.seed,
-    score: scored,
+    score: state.score + scoreGain,
     level: nextLevel,
     lines: totalLines,
     lastClear: clearedResult.cleared,
+    lastScoreGain: scoreGain,
+    clearMessage: clearResult.message,
+    feedbackRemainingMs: clearResult.message ? CLEAR_FEEDBACK_MS : 0,
+    combo: clearResult.combo,
+    bestCombo: Math.max(state.bestCombo, clearResult.combo),
+    piecesPlaced: state.piecesPlaced + 1,
     dropAccumulator: 0,
     canHold: true,
   };
@@ -330,6 +386,12 @@ export function createInitialState(seed = DEFAULT_SEED): GameState {
     level: 1,
     lines: 0,
     lastClear: 0,
+    lastScoreGain: 0,
+    clearMessage: null,
+    feedbackRemainingMs: 0,
+    combo: 0,
+    bestCombo: 0,
+    piecesPlaced: 0,
     dropAccumulator: 0,
   };
 }
@@ -458,7 +520,6 @@ export function holdPiece(state: GameState): GameState {
     canHold: false,
     rngSeed: nextSeed,
     dropAccumulator: 0,
-    lastClear: 0,
   };
 
   if (!canPlace(nextState.board, nextState.active)) {
@@ -521,8 +582,17 @@ export function tick(state: GameState, deltaMs: number): GameState {
   let nextState = {
     ...state,
     dropAccumulator: state.dropAccumulator + deltaMs,
-    lastClear: 0,
+    feedbackRemainingMs: Math.max(0, state.feedbackRemainingMs - deltaMs),
   };
+
+  if (nextState.feedbackRemainingMs === 0 && state.feedbackRemainingMs > 0) {
+    nextState = {
+      ...nextState,
+      lastClear: 0,
+      lastScoreGain: 0,
+      clearMessage: null,
+    };
+  }
   const interval = getDropInterval(nextState.level);
 
   while (nextState.dropAccumulator >= interval) {
@@ -573,4 +643,19 @@ export function getGhostY(board: Board, piece: ActivePiece): number {
 
 export function boardToRows(board: Board): string[] {
   return board.map((row) => row.map((cell) => cell ?? ".").join(""));
+}
+
+export function getDangerLevel(board: Board): DangerLevel {
+  const firstOccupiedRow = board.findIndex((row) => row.some((cell) => cell !== null));
+
+  if (firstOccupiedRow === -1 || firstOccupiedRow >= 8) {
+    return "safe";
+  }
+
+  return firstOccupiedRow < 4 ? "critical" : "warning";
+}
+
+export function getLinesUntilNextLevel(lines: number): number {
+  const normalizedLines = Math.max(0, Math.floor(lines));
+  return 10 - (normalizedLines % 10);
 }

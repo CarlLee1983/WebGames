@@ -22,9 +22,12 @@ import {
   clearSelection,
   createInitialState,
   extendSelection,
+  getChainPreview,
+  getRankOutlook,
   isPathValid,
   pointKey,
   resolveSelection,
+  requestHint,
   restartGame,
   selectionToKeys,
   startGame,
@@ -45,7 +48,15 @@ type UiSnapshot = {
   validMoveCount: number;
   moves: number;
   reshuffles: number;
+  hintsUsed: number;
+  bestChain: number;
+  rank: GameState["rank"];
+  rankOutlook: GameState["rank"];
   selectedLength: number;
+  selectedPoints: number;
+  animalsNeeded: number;
+  hintLength: number;
+  scoreRemaining: number;
   message: string | null;
 };
 
@@ -249,6 +260,7 @@ function drawAnimalFace(
 }
 
 function buildUiSnapshot(state: GameState): UiSnapshot {
+  const chainPreview = getChainPreview(state.selectedPath.length);
   return {
     mode: state.mode,
     score: state.score,
@@ -257,12 +269,21 @@ function buildUiSnapshot(state: GameState): UiSnapshot {
     validMoveCount: state.validMoveCount,
     moves: state.moves,
     reshuffles: state.reshuffles,
+    hintsUsed: state.hintsUsed,
+    bestChain: state.bestChain,
+    rank: state.rank,
+    rankOutlook: state.mode === "complete" ? state.rank : getRankOutlook(state.moves, state.hintsUsed),
     selectedLength: state.selectedPath.length,
+    selectedPoints: chainPreview.points,
+    animalsNeeded: chainPreview.animalsNeeded,
+    hintLength: state.hintPath.length,
+    scoreRemaining: Math.max(0, state.targetScore - state.score),
     message: state.message,
   };
 }
 
 function renderGameToText(state: GameState): string {
+  const chainPreview = getChainPreview(state.selectedPath.length);
   return JSON.stringify({
     coordinateSystem: "board origin top-left; row increases downward 0-5; col increases rightward 0-5",
     mode: state.mode,
@@ -271,16 +292,28 @@ function renderGameToText(state: GameState): string {
     targetReached: state.targetReached,
     moves: state.moves,
     reshuffles: state.reshuffles,
+    hintsUsed: state.hintsUsed,
+    bestChain: state.bestChain,
+    rank: state.rank,
+    rankOutlook: state.mode === "complete" ? state.rank : getRankOutlook(state.moves, state.hintsUsed),
+    scoreRemaining: Math.max(0, state.targetScore - state.score),
     validMoveCount: state.validMoveCount,
     selectedAnimal: state.selectedAnimal,
     selectedPath: selectionToKeys(state.selectedPath),
+    hintPath: selectionToKeys(state.hintPath),
     selectionIsValid: isPathValid(state.board, state.selectedPath),
+    selectedPoints: chainPreview.points,
+    animalsNeeded: chainPreview.animalsNeeded,
     board: boardToSymbols(state.board),
     message: state.message,
   });
 }
 
 function drawScene(ctx: CanvasRenderingContext2D, state: GameState) {
+  const chainPreview = getChainPreview(state.selectedPath.length);
+  const rankOutlook = state.mode === "complete"
+    ? state.rank ?? "Bronze"
+    : getRankOutlook(state.moves, state.hintsUsed);
   ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
   const sky = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
@@ -331,6 +364,7 @@ function drawScene(ctx: CanvasRenderingContext2D, state: GameState) {
   fillRoundedRect(ctx, BOARD_LEFT - 10, BOARD_TOP - 10, BOARD_WIDTH + 20, BOARD_HEIGHT + 20, 24, "#166534");
 
   const selectedKeys = new Set(state.selectedPath.map(pointKey));
+  const hintKeys = new Set(state.hintPath.map(pointKey));
 
   for (let row = 0; row < ROWS; row += 1) {
     for (let col = 0; col < COLS; col += 1) {
@@ -338,6 +372,7 @@ function drawScene(ctx: CanvasRenderingContext2D, state: GameState) {
       const x = BOARD_LEFT + col * TILE_SIZE;
       const y = BOARD_TOP + row * TILE_SIZE;
       const selected = selectedKeys.has(pointKey({ row, col }));
+      const hinted = hintKeys.has(pointKey({ row, col }));
 
       if (!cell) {
         fillRoundedRect(ctx, x + 3, y + 3, TILE_SIZE - 6, TILE_SIZE - 6, 20, "rgba(255,255,255,0.2)");
@@ -362,6 +397,15 @@ function drawScene(ctx: CanvasRenderingContext2D, state: GameState) {
         ctx.shadowBlur = 0;
       }
 
+      if (hinted && !selected) {
+        ctx.save();
+        ctx.setLineDash([7, 5]);
+        ctx.shadowColor = "#facc15";
+        ctx.shadowBlur = 14;
+        strokeRoundedRect(ctx, x + 6, y + 6, TILE_SIZE - 12, TILE_SIZE - 12, 18, "#fef08a", 4);
+        ctx.restore();
+      }
+
       drawAnimalFace(ctx, cell, x + 3, y + 3, TILE_SIZE - 6, style);
     }
   }
@@ -384,6 +428,28 @@ function drawScene(ctx: CanvasRenderingContext2D, state: GameState) {
     ctx.stroke();
   }
 
+  fillRoundedRect(ctx, 34, 628, CANVAS_WIDTH - 68, 96, 22, "rgba(255,255,255,0.9)");
+  strokeRoundedRect(ctx, 34, 628, CANVAS_WIDTH - 68, 96, 22, "rgba(14,116,144,0.14)", 1.5);
+  ctx.fillStyle = "#64748b";
+  ctx.font = "800 11px var(--font-geist-sans), sans-serif";
+  ctx.fillText("CHAIN VALUE", 54, 655);
+  ctx.fillText(state.mode === "complete" ? "FINAL RANK" : "RANK PATH", 306, 655);
+
+  ctx.fillStyle = chainPreview.isValid ? "#db2777" : "#334155";
+  ctx.font = "900 20px var(--font-geist-sans), sans-serif";
+  const chainText = chainPreview.isValid
+    ? `${chainPreview.length} animals · +${chainPreview.points}`
+    : chainPreview.length > 0
+      ? `${chainPreview.animalsNeeded} more needed`
+      : "Build a 3+ chain";
+  ctx.fillText(chainText, 54, 684);
+
+  ctx.fillStyle = rankOutlook === "Gold" ? "#b45309" : rankOutlook === "Silver" ? "#475569" : "#9a3412";
+  ctx.fillText(`${rankOutlook} ${state.mode === "complete" ? "earned" : "open"}`, 306, 684);
+  ctx.fillStyle = "#64748b";
+  ctx.font = "700 12px var(--font-geist-sans), sans-serif";
+  ctx.fillText(`${Math.max(0, state.targetScore - state.score)} points left`, 306, 706);
+
   if (state.mode === "ready") {
     fillRoundedRect(ctx, 70, 236, CANVAS_WIDTH - 140, 192, 28, "rgba(15,23,42,0.78)");
     ctx.fillStyle = "#f8fafc";
@@ -395,6 +461,27 @@ function drawScene(ctx: CanvasRenderingContext2D, state: GameState) {
     ctx.fillText("Chains need at least 3 animals. Reach 1500 points to win.", CANVAS_WIDTH / 2, 346);
     ctx.fillText("If the board runs dry, it reshuffles automatically.", CANVAS_WIDTH / 2, 372);
     ctx.fillText("Use F for fullscreen. Esc exits fullscreen.", CANVAS_WIDTH / 2, 398);
+    ctx.textAlign = "left";
+  }
+
+  if (state.mode === "complete") {
+    fillRoundedRect(ctx, 68, 226, CANVAS_WIDTH - 136, 236, 30, "rgba(8,47,73,0.92)");
+    strokeRoundedRect(ctx, 68, 226, CANVAS_WIDTH - 136, 236, 30, "#fde68a", 3);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#fef3c7";
+    ctx.font = "800 15px var(--font-geist-sans), sans-serif";
+    ctx.fillText("SAFARI COMPLETE", CANVAS_WIDTH / 2, 270);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 38px var(--font-geist-sans), sans-serif";
+    ctx.fillText(`${state.rank ?? "Bronze"} Rank`, CANVAS_WIDTH / 2, 320);
+    ctx.fillStyle = "#bae6fd";
+    ctx.font = "700 17px var(--font-geist-sans), sans-serif";
+    ctx.fillText(`${state.score} points · ${state.moves} moves`, CANVAS_WIDTH / 2, 356);
+    ctx.font = "600 14px var(--font-geist-sans), sans-serif";
+    ctx.fillText(`Best chain ${state.bestChain} · Hints ${state.hintsUsed}`, CANVAS_WIDTH / 2, 386);
+    ctx.fillStyle = "#fde68a";
+    ctx.font = "700 14px var(--font-geist-sans), sans-serif";
+    ctx.fillText("Choose New Safari to play again", CANVAS_WIDTH / 2, 426);
     ctx.textAlign = "left";
   }
 
@@ -444,9 +531,17 @@ export default function ZookeeperPage() {
       return;
     }
 
-    const displayWidth = document.fullscreenElement
-      ? Math.min(window.innerWidth - 24, CANVAS_WIDTH)
-      : Math.min(canvas.parentElement?.clientWidth ?? CANVAS_WIDTH, CANVAS_WIDTH);
+    const aspectRatio = CANVAS_WIDTH / CANVAS_HEIGHT;
+    const heightBudget = document.fullscreenElement
+      ? window.innerHeight - 24
+      : window.innerWidth >= 768
+        ? Math.max(420, window.innerHeight - 205)
+        : window.innerHeight * 0.58;
+    const displayWidth = Math.min(
+      canvas.parentElement?.clientWidth ?? CANVAS_WIDTH,
+      CANVAS_WIDTH,
+      heightBudget * aspectRatio,
+    );
     const displayHeight = displayWidth * (CANVAS_HEIGHT / CANVAS_WIDTH);
     const dpr = window.devicePixelRatio || 1;
 
@@ -649,7 +744,7 @@ export default function ZookeeperPage() {
   }, [commitState]);
 
   useEffect(() => {
-    const keysToPrevent = [" ", "Enter", "Escape", "f", "F", "r", "R"];
+    const keysToPrevent = [" ", "Enter", "Escape", "f", "F", "h", "H", "r", "R"];
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (keysToPrevent.includes(event.key)) {
@@ -671,9 +766,16 @@ export default function ZookeeperPage() {
         return;
       }
 
+      if (event.key === "h" || event.key === "H") {
+        commitState(requestHint(stateRef.current));
+        return;
+      }
+
       if (event.key === "Enter" || event.key === " ") {
         if (stateRef.current.mode === "ready") {
           commitState(startGame(stateRef.current));
+        } else if (stateRef.current.mode === "complete") {
+          commitState(startGame(restartGame()));
         }
       }
     };
@@ -686,48 +788,83 @@ export default function ZookeeperPage() {
     drawCurrentState();
   }, [drawCurrentState, isFullscreen]);
 
-  const selectedBonus = ui.selectedLength >= MIN_CHAIN_LENGTH ? "Ready to clear" : `${MIN_CHAIN_LENGTH - ui.selectedLength} more needed`;
+  const handlePrimaryAction = () => {
+    if (stateRef.current.mode === "ready") {
+      commitState(startGame(stateRef.current));
+    } else if (stateRef.current.mode === "complete") {
+      commitState(startGame(restartGame()));
+    }
+  };
+
+  const selectedBonus = ui.selectedPoints > 0
+    ? `worth ${ui.selectedPoints} points`
+    : `${ui.animalsNeeded} more needed`;
+  const scoreProgress = Math.min(100, Math.round((ui.score / ui.targetScore) * 100));
+  const rankOutlook = ui.rankOutlook ?? "Bronze";
   const statusMessage =
     ui.mode === "ready"
       ? "Press Start, then drag across adjacent matching animals."
-      : ui.targetReached
-        ? `Target reached. Current score ${ui.score}.`
-        : ui.message ?? `Chain ${ui.selectedLength}. ${selectedBonus}.`;
+      : ui.mode === "complete"
+        ? `Safari complete — ${ui.rank ?? "Bronze"} rank with ${ui.score} points in ${ui.moves} moves.`
+        : ui.message ?? (ui.selectedLength > 0
+          ? `Chain ${ui.selectedLength}, ${selectedBonus}.`
+          : "Trace 3 or more adjacent matching animals to score.");
 
   return (
-    <div className="py-10 sm:py-14">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#ecfccb_0%,_#f8fafc_48%,_#e0f2fe_100%)] py-4 sm:py-6">
       <Container size="lg">
-        <div className="mx-auto flex max-w-4xl flex-col items-center gap-5">
+        <div className="mx-auto flex max-w-4xl flex-col items-center gap-4">
           <header className="text-center">
-            <h1 className="text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">Zookeeper</h1>
-            <p className="mt-2 max-w-2xl text-sm text-slate-600 sm:text-base">
-              A solo chain-match safari. Tap or drag through matching neighbors, clear 3 or more, and race to 1500 points.
+            <div className="mb-1 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/75 px-3 py-1 text-xs font-black uppercase tracking-[0.2em] text-emerald-700 shadow-sm">
+              <span className="i-ph-paw-print-duotone text-base" aria-hidden="true" />
+              Puzzle Safari
+            </div>
+            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">Zookeeper</h1>
+            <p className="mt-1 max-w-2xl text-sm text-slate-600 sm:text-base">
+              Trace adjacent matching animals, build bigger chains, and earn the best safari rank.
             </p>
           </header>
 
-          <canvas
-            id="zookeeper-canvas"
-            ref={canvasRef}
-            className="w-full max-w-[560px] rounded-[32px] shadow-[0_24px_80px_rgba(15,23,42,0.18)] outline-none touch-none"
-            aria-label="Zookeeper game canvas"
-          />
+          <div className="grid w-full max-w-4xl items-start gap-4 md:grid-cols-[minmax(0,1fr)_18rem]">
+            <canvas
+              id="zookeeper-canvas"
+              ref={canvasRef}
+              role="application"
+              tabIndex={0}
+              className="w-full max-w-[560px] justify-self-center rounded-[28px] shadow-[0_24px_80px_rgba(15,23,42,0.18)] outline-none touch-none focus-visible:ring-4 focus-visible:ring-emerald-400"
+              aria-label={`Zookeeper，${ui.mode}，${ui.score} 分，${ui.moves} 步，目前連鎖 ${ui.selectedLength}`}
+              aria-describedby="zookeeper-status"
+            />
 
-          <div className="grid w-full max-w-[560px] grid-cols-3 gap-3">
+            <div className="flex min-w-0 flex-col gap-3 md:sticky md:top-4">
+          <div className="grid w-full grid-cols-2 gap-2">
             <button
               id="zookeeper-start"
               type="button"
-              onClick={() => commitState(startGame(stateRef.current))}
-              className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+              onClick={handlePrimaryAction}
+              disabled={ui.mode === "playing"}
+              className="min-h-12 rounded-2xl bg-slate-900 px-3 py-3 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-default disabled:bg-slate-300 disabled:text-slate-500"
             >
-              {ui.mode === "ready" ? "Start" : "Keep Playing"}
+              {ui.mode === "ready" ? "Start Safari" : ui.mode === "complete" ? "New Safari" : "Safari Active"}
             </button>
             <button
               id="zookeeper-restart"
               type="button"
               onClick={() => commitState(restartGame())}
-              className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
+              className="min-h-12 rounded-2xl bg-white px-3 py-3 text-sm font-bold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
             >
               Restart
+            </button>
+            <button
+              id="zookeeper-hint"
+              type="button"
+              onClick={() => commitState(requestHint(stateRef.current))}
+              disabled={ui.mode !== "playing"}
+              aria-label={ui.hintLength >= MIN_CHAIN_LENGTH ? "Hint already active" : "Show a hint; a new hint affects safari rank"}
+              className="min-h-12 rounded-2xl bg-emerald-500 px-3 py-3 text-sm font-bold text-white transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:text-emerald-500"
+            >
+              <span className="i-ph-lightbulb-filament-duotone mr-1 inline-flex" aria-hidden="true" />
+              {ui.hintLength >= MIN_CHAIN_LENGTH ? "Hint active" : "Hint"}
             </button>
             <button
               id="zookeeper-fullscreen"
@@ -735,41 +872,62 @@ export default function ZookeeperPage() {
               onClick={() => {
                 void toggleFullscreen();
               }}
-              className="rounded-2xl bg-amber-400 px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-amber-300"
+              className="min-h-12 rounded-2xl bg-amber-400 px-3 py-3 text-sm font-bold text-slate-900 transition hover:bg-amber-300"
             >
-              Fullscreen
+              {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
             </button>
           </div>
 
           <div
-            className="w-full max-w-[560px] rounded-2xl bg-white/85 px-4 py-3 text-sm text-slate-700 shadow-sm ring-1 ring-slate-200"
+            id="zookeeper-status"
+            className="box-border w-full rounded-2xl bg-white/85 px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200"
             aria-live="polite"
           >
             {statusMessage}
           </div>
 
-          <dl className="grid w-full max-w-[560px] grid-cols-2 gap-3 text-center sm:grid-cols-4">
+          <div className="box-border w-full rounded-2xl bg-slate-900 px-4 py-3 text-white shadow-sm">
+            <div className="flex items-center justify-between gap-3 text-xs font-bold">
+              <span className="uppercase tracking-[0.16em] text-sky-200">Safari target</span>
+              <span className="tabular-nums text-slate-200">{ui.scoreRemaining} points left</span>
+            </div>
+            <div
+              className="mt-2 h-2.5 overflow-hidden rounded-full bg-white/15"
+              role="progressbar"
+              aria-label="Progress to safari target"
+              aria-valuemin={0}
+              aria-valuemax={ui.targetScore}
+              aria-valuenow={Math.min(ui.score, ui.targetScore)}
+            >
+              <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-amber-300 transition-[width] duration-300" style={{ width: `${scoreProgress}%` }} />
+            </div>
+          </div>
+
+          <dl className="grid w-full grid-cols-2 gap-3 text-center">
             <div className="rounded-2xl bg-white px-4 py-2.5 shadow-sm ring-1 ring-slate-200">
               <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Score</dt>
-              <dd className="mt-1 text-xl font-bold text-slate-900">{ui.score}</dd>
-            </div>
-            <div className="rounded-2xl bg-white px-4 py-2.5 shadow-sm ring-1 ring-slate-200">
-              <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Target</dt>
-              <dd className="mt-1 text-xl font-bold text-amber-600">{ui.targetScore}</dd>
+              <dd className="mt-1 text-xl font-bold text-slate-900">{ui.score}<span className="text-sm text-slate-400"> / {ui.targetScore}</span></dd>
             </div>
             <div className="rounded-2xl bg-white px-4 py-2.5 shadow-sm ring-1 ring-slate-200">
               <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Moves</dt>
               <dd className="mt-1 text-xl font-bold text-sky-600">{ui.moves}</dd>
             </div>
             <div className="rounded-2xl bg-white px-4 py-2.5 shadow-sm ring-1 ring-slate-200">
-              <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Chain</dt>
-              <dd className="mt-1 text-xl font-bold text-pink-600">{ui.selectedLength}</dd>
+              <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Chain value</dt>
+              <dd className="mt-1 text-xl font-bold text-pink-600">{ui.selectedLength}<span className="ml-1 text-sm text-pink-400">+{ui.selectedPoints}</span></dd>
+            </div>
+            <div className="rounded-2xl bg-white px-4 py-2.5 shadow-sm ring-1 ring-slate-200">
+              <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Rank path</dt>
+              <dd className={`mt-1 text-xl font-bold ${rankOutlook === "Gold" ? "text-amber-600" : rankOutlook === "Silver" ? "text-slate-500" : "text-orange-700"}`}>{rankOutlook}</dd>
             </div>
           </dl>
 
-          <div className="flex w-full max-w-[560px] items-center justify-between text-xs font-medium text-slate-500">
+          <div className="box-border flex w-full flex-wrap items-center justify-between gap-2 rounded-2xl bg-white/65 px-3 py-2 text-xs font-semibold text-slate-500 ring-1 ring-white">
             <span>{ui.validMoveCount} live groups on board</span>
-            <span>{ui.reshuffles} reshuffles</span>
+            <span>Best chain {ui.bestChain}</span>
+            <span>{ui.hintsUsed} hints · {ui.reshuffles} reshuffles</span>
+          </div>
+            </div>
           </div>
         </div>
       </Container>

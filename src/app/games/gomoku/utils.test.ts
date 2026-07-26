@@ -2,9 +2,14 @@ import { describe, expect, test } from "bun:test";
 
 import {
   BOARD_SIZE,
+  applyGameMove,
   checkWinner,
   createEmptyBoard,
+  createInitialGameState,
   getComputerMove,
+  getWinningLine,
+  stateToRows,
+  undoGame,
   type AiDifficulty,
   type Board,
   type Player,
@@ -31,6 +36,73 @@ describe("checkWinner", () => {
     ]);
 
     expect(checkWinner(7, 8, "black", board)).toBe(true);
+    expect(getWinningLine(7, 8, "black", board)).toEqual([
+      { row: 3, col: 4 },
+      { row: 4, col: 5 },
+      { row: 5, col: 6 },
+      { row: 6, col: 7 },
+      { row: 7, col: 8 },
+    ]);
+  });
+});
+
+describe("game state", () => {
+  test("applies legal alternating moves without mutating the prior board", () => {
+    const initial = createInitialGameState();
+    const afterBlack = applyGameMove(initial, 7, 7, "black");
+    const afterWhite = applyGameMove(afterBlack, 7, 8, "white");
+
+    expect(initial.board[7][7]).toBeNull();
+    expect(afterBlack.board[7][7]).toBe("black");
+    expect(afterBlack.lastMove).toEqual({ row: 7, col: 7, player: "black" });
+    expect(afterWhite.board[7][8]).toBe("white");
+    expect(afterWhite.history).toHaveLength(2);
+    expect(applyGameMove(afterWhite, 7, 8, "black")).toBe(afterWhite);
+    expect(applyGameMove(afterWhite, 6, 6, "white")).toBe(afterWhite);
+  });
+
+  test("records the winning line and freezes further placement", () => {
+    let state = createInitialGameState();
+    for (let col = 3; col <= 6; col += 1) {
+      state = applyGameMove(state, 7, col, "black");
+      state = applyGameMove(state, 8, col, "white");
+    }
+    const won = applyGameMove(state, 7, 7, "black");
+
+    expect(won.winner).toBe("black");
+    expect(won.winningLine).toEqual([
+      { row: 7, col: 3 },
+      { row: 7, col: 4 },
+      { row: 7, col: 5 },
+      { row: 7, col: 6 },
+      { row: 7, col: 7 },
+    ]);
+    expect(applyGameMove(won, 1, 1, "white")).toBe(won);
+  });
+
+  test("undoes one local move or a full answered computer turn", () => {
+    const initial = createInitialGameState();
+    const afterBlack = applyGameMove(initial, 7, 7, "black");
+    const afterWhite = applyGameMove(afterBlack, 7, 8, "white");
+
+    const localUndo = undoGame(afterWhite, "local");
+    expect(localUndo.board[7][7]).toBe("black");
+    expect(localUndo.board[7][8]).toBeNull();
+    expect(localUndo.isBlackNext).toBe(false);
+
+    const computerUndo = undoGame(afterWhite, "computer");
+    expect(computerUndo.board).toEqual(initial.board);
+    expect(computerUndo.isBlackNext).toBe(true);
+    expect(computerUndo.history).toHaveLength(0);
+  });
+
+  test("renders a stable text board for inspection", () => {
+    const state = applyGameMove(createInitialGameState(), 7, 7, "black");
+    const rows = stateToRows(state);
+
+    expect(rows).toHaveLength(BOARD_SIZE);
+    expect(rows[7][7]).toBe("B");
+    expect(rows.join("").match(/B/g)).toHaveLength(1);
   });
 });
 

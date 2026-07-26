@@ -10,13 +10,17 @@ import {
   BUBBLE_RADIUS,
   COLORS,
   COLS,
-  MAX_ROWS,
+  advanceCeiling,
+  bubbleBoardToRows,
   distance,
-  findFloating,
-  findMatches,
+  getBubblePressure,
   getBubbleX,
   getBubbleY,
-  getGridPos,
+  getLandingPosition,
+  getShotsUntilDrop,
+  hasCrossedDangerLine,
+  parseBestScore,
+  resolveBubblePlacement,
   type Bubble,
   type FlyingBubble,
 } from "./utils";
@@ -24,6 +28,13 @@ import {
 const SHOTS_BEFORE_DROP = 6;
 const CANNON_X = BOARD_WIDTH / 2;
 const CANNON_Y = BOARD_HEIGHT - BUBBLE_RADIUS - 6;
+const BEST_SCORE_KEY = "web-games:puzzle-bobble:best-score";
+
+declare global {
+  interface Window {
+    render_game_to_text?: () => string;
+  }
+}
 
 const COLOR_DETAILS: Record<string, { light: string; dark: string; symbol: string; name: string }> = {
   "#ef4444": { light: "#fb7185", dark: "#991b1b", symbol: "✦", name: "Coral" },
@@ -202,11 +213,13 @@ export default function PuzzleBobbleGame() {
   const gameWonRef = useRef(false);
   const pausedRef = useRef(false);
   const mutedRef = useRef(false);
+  const scoreRef = useRef(0);
   const shakeRef = useRef(0);
   const gainTimeoutRef = useRef<number | null>(null);
   const audioRef = useRef<Partial<Record<SoundName, HTMLAudioElement>>>({});
 
   const [score, setScore] = useState(0);
+  const [bestScore, setBestScore] = useState(0);
   const [shotsFired, setShotsFired] = useState(0);
   const [combo, setCombo] = useState(0);
   const [lastGain, setLastGain] = useState(0);
@@ -214,6 +227,8 @@ export default function PuzzleBobbleGame() {
   const [gameWon, setGameWon] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [pressure, setPressure] = useState(() => getBubblePressure(initialBoard));
+  const [statusMessage, setStatusMessage] = useState("Aim with the guide, then release to shoot.");
   const [, setBoardRevision] = useState(0);
 
   const playSound = useCallback((name: SoundName, volume = 0.5) => {
@@ -231,6 +246,12 @@ export default function PuzzleBobbleGame() {
     gameOverRef.current = !winner;
     setGameWon(winner);
     setGameOver(!winner);
+    setStatusMessage(winner ? "Stage clear. Every bubble is gone." : "Run ended. The bubbles crossed the danger line.");
+    setBestScore((currentBest) => {
+      const nextBest = Math.max(currentBest, scoreRef.current);
+      if (nextBest !== currentBest) window.localStorage.setItem(BEST_SCORE_KEY, String(nextBest));
+      return nextBest;
+    });
     playSound(winner ? "pop" : "drop", winner ? 0.75 : 0.65);
   }, [playSound]);
 
@@ -247,6 +268,7 @@ export default function PuzzleBobbleGame() {
     gameWonRef.current = false;
     pausedRef.current = false;
     shakeRef.current = 0;
+    scoreRef.current = 0;
     setScore(0);
     setShotsFired(0);
     setCombo(0);
@@ -254,6 +276,8 @@ export default function PuzzleBobbleGame() {
     setGameOver(false);
     setGameWon(false);
     setIsPaused(false);
+    setPressure(getBubblePressure(board));
+    setStatusMessage("Fresh ceiling loaded. Aim with the guide, then release to shoot.");
     setBoardRevision((revision) => revision + 1);
     playSound("button", 0.35);
   }, [playSound]);
@@ -284,20 +308,19 @@ export default function PuzzleBobbleGame() {
   }, []);
 
   const dropCeiling = useCallback(() => {
-    const shiftedBoard = boardRef.current.map((bubble) => ({ ...bubble, row: bubble.row + 1 }));
+    const advance = advanceCeiling(
+      boardRef.current,
+      Array.from({ length: COLS }, randomColor),
+    );
 
-    for (let col = 0; col < COLS; col += 1) {
-      shiftedBoard.push({ row: 0, col, color: randomColor() });
-    }
-
-    boardRef.current = shiftedBoard;
+    boardRef.current = advance.board;
+    setPressure(getBubblePressure(advance.board));
     setBoardRevision((revision) => revision + 1);
     shakeRef.current = 5;
+    setStatusMessage(advance.lost ? "The new row crossed the danger line." : "Pressure rising: the ceiling advanced one row.");
     playSound("drop", 0.55);
 
-    if (shiftedBoard.some((bubble) => getBubbleY(bubble.row) > BOARD_HEIGHT - BUBBLE_DIAMETER * 2)) {
-      finishGame(false);
-    }
+    if (advance.lost) finishGame(false);
   }, [finishGame, playSound]);
 
   const showGain = useCallback((points: number) => {
@@ -325,6 +348,7 @@ export default function PuzzleBobbleGame() {
     const nextPaused = !pausedRef.current;
     pausedRef.current = nextPaused;
     setIsPaused(nextPaused);
+    setStatusMessage(nextPaused ? "Game paused." : "Game resumed. Aim and release when ready.");
     playSound("button", 0.3);
   }, [playSound]);
 
@@ -347,6 +371,20 @@ export default function PuzzleBobbleGame() {
     angleRef.current = Math.max(0.22, Math.min(Math.PI - 0.22, angle));
   }, []);
 
+  const nudgeAim = useCallback((direction: "left" | "right") => {
+    if (gameOverRef.current || gameWonRef.current || pausedRef.current || flyingBubbleRef.current) return;
+    angleRef.current = direction === "left"
+      ? Math.min(Math.PI - 0.22, angleRef.current + 0.1)
+      : Math.max(0.22, angleRef.current - 0.1);
+  }, []);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setBestScore(parseBestScore(window.localStorage.getItem(BEST_SCORE_KEY)));
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, []);
+
   useEffect(() => {
     for (const [name, path] of Object.entries(SOUND_PATHS) as Array<[SoundName, string]>) {
       const audio = new Audio(getAssetPath(path));
@@ -366,9 +404,9 @@ export default function PuzzleBobbleGame() {
       if (["ArrowLeft", "ArrowRight", " ", "Enter"].includes(event.key)) event.preventDefault();
 
       if (event.key === "ArrowLeft" || event.key.toLowerCase() === "a") {
-        angleRef.current = Math.min(Math.PI - 0.22, angleRef.current + 0.08);
+        nudgeAim("left");
       } else if (event.key === "ArrowRight" || event.key.toLowerCase() === "d") {
-        angleRef.current = Math.max(0.22, angleRef.current - 0.08);
+        nudgeAim("right");
       } else if (event.key === " " || event.key === "Enter") {
         shoot();
       } else if (event.key.toLowerCase() === "p" || event.key === "Escape") {
@@ -382,7 +420,26 @@ export default function PuzzleBobbleGame() {
 
     window.addEventListener("keydown", handleKeyDown, { passive: false });
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [resetGame, shoot, toggleMuted, togglePause]);
+  }, [nudgeAim, resetGame, shoot, toggleMuted, togglePause]);
+
+  useEffect(() => {
+    const pauseForInterruption = () => {
+      if (gameOverRef.current || gameWonRef.current || pausedRef.current) return;
+      pausedRef.current = true;
+      setIsPaused(true);
+      setStatusMessage("Auto-paused while the game was out of focus.");
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") pauseForInterruption();
+    };
+
+    window.addEventListener("blur", pauseForInterruption);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("blur", pauseForInterruption);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
 
   useEffect(() => {
     let animationFrame = 0;
@@ -473,52 +530,48 @@ export default function PuzzleBobbleGame() {
         ));
 
         if (hitCeiling || hitBubble) {
-          const gridPosition = getGridPos(flying.x, Math.max(BUBBLE_RADIUS, flying.y));
-          let finalRow = gridPosition.row;
-          while (boardRef.current.some((bubble) => bubble.row === finalRow && bubble.col === gridPosition.col)) {
-            finalRow += 1;
-          }
+          const landingPosition = getLandingPosition(
+            boardRef.current,
+            flying.x,
+            Math.max(BUBBLE_RADIUS, flying.y),
+          );
+          const newBubble: Bubble = { ...landingPosition, color: flying.color };
+          const resolution = resolveBubblePlacement(boardRef.current, newBubble, combo);
 
-          const newBubble: Bubble = { row: finalRow, col: gridPosition.col, color: flying.color };
-          const boardWithBubble = [...boardRef.current, newBubble];
-          const matches = findMatches(boardWithBubble, newBubble);
-          let resolvedBoard = boardWithBubble;
-
-          if (matches.length >= 3) {
-            const matchKeys = new Set(matches.map((bubble) => `${bubble.row},${bubble.col}`));
-            resolvedBoard = boardWithBubble.filter((bubble) => !matchKeys.has(`${bubble.row},${bubble.col}`));
-            const floating = findFloating(resolvedBoard);
-            const floatingKeys = new Set(floating.map((bubble) => `${bubble.row},${bubble.col}`));
-            resolvedBoard = resolvedBoard.filter((bubble) => !floatingKeys.has(`${bubble.row},${bubble.col}`));
-
-            const nextCombo = combo + 1;
-            const points = matches.length * 10 + floating.length * 20 + Math.max(0, nextCombo - 1) * 15;
-            setCombo(nextCombo);
-            setScore((currentScore) => currentScore + points);
-            showGain(points);
-            spawnParticles(matches, false);
-            spawnParticles(floating, true);
-            shakeRef.current = Math.min(8, 3 + matches.length * 0.6);
+          if (resolution.points > 0) {
+            const nextScore = scoreRef.current + resolution.points;
+            scoreRef.current = nextScore;
+            setScore(nextScore);
+            setCombo(resolution.combo);
+            showGain(resolution.points);
+            spawnParticles(resolution.matches, false);
+            spawnParticles(resolution.floating, true);
+            shakeRef.current = Math.min(8, 3 + resolution.matches.length * 0.6);
+            setStatusMessage(
+              `${resolution.matches.length} popped${resolution.floating.length > 0 ? `, ${resolution.floating.length} dropped` : ""}. +${resolution.points} points.`,
+            );
             playSound("pop", 0.6);
 
-            if (resolvedBoard.length === 0) finishGame(true);
+            if (resolution.won) finishGame(true);
           } else {
             setCombo(0);
+            setStatusMessage(`Bubble anchored. ${getShotsUntilDrop(shotsFiredRef.current + 1, SHOTS_BEFORE_DROP)} shots until the ceiling drops.`);
             playSound("stick", 0.35);
           }
 
-          boardRef.current = resolvedBoard;
+          boardRef.current = resolution.board;
+          setPressure(getBubblePressure(resolution.board));
           setBoardRevision((revision) => revision + 1);
           flyingBubbleRef.current = null;
           currentColorRef.current = nextColorRef.current;
-          nextColorRef.current = pickBoardColor(resolvedBoard);
+          nextColorRef.current = pickBoardColor(resolution.board);
 
           const nextShots = shotsFiredRef.current + 1;
           shotsFiredRef.current = nextShots;
           setShotsFired(nextShots);
 
           if (!gameWonRef.current && nextShots % SHOTS_BEFORE_DROP === 0) dropCeiling();
-          if (!gameWonRef.current && finalRow >= MAX_ROWS - 1) finishGame(false);
+          if (!gameWonRef.current && hasCrossedDangerLine(resolution.board)) finishGame(false);
         } else {
           drawBubble(ctx, flying.x, flying.y, flying.color, 1.02);
         }
@@ -553,12 +606,38 @@ export default function PuzzleBobbleGame() {
     return () => window.cancelAnimationFrame(animationFrame);
   }, [combo, dropCeiling, finishGame, playSound, showGain, spawnParticles]);
 
-  const shotsUntilDrop = SHOTS_BEFORE_DROP - (shotsFired % SHOTS_BEFORE_DROP);
+  useEffect(() => {
+    const renderTextState = () => JSON.stringify({
+      phase: gameWonRef.current ? "won" : gameOverRef.current ? "lost" : pausedRef.current ? "paused" : "playing",
+      score: scoreRef.current,
+      bestScore,
+      combo,
+      shotsFired: shotsFiredRef.current,
+      shotsUntilDrop: getShotsUntilDrop(shotsFiredRef.current, SHOTS_BEFORE_DROP),
+      pressure: getBubblePressure(boardRef.current),
+      currentColor: COLOR_DETAILS[currentColorRef.current]?.name ?? currentColorRef.current,
+      nextColor: COLOR_DETAILS[nextColorRef.current]?.name ?? nextColorRef.current,
+      board: bubbleBoardToRows(boardRef.current),
+    });
+
+    window.render_game_to_text = renderTextState;
+  }, [bestScore, combo, shotsFired]);
+
+  useEffect(() => () => {
+    delete window.render_game_to_text;
+  }, []);
+
+  const shotsUntilDrop = getShotsUntilDrop(shotsFired, SHOTS_BEFORE_DROP);
+  const pressureDetails = {
+    safe: { label: "Stable ceiling", color: "text-emerald-300", dot: "bg-emerald-300" },
+    pressured: { label: "Pressure building", color: "text-amber-300", dot: "bg-amber-300" },
+    critical: { label: "Critical depth", color: "text-rose-300", dot: "bg-rose-300" },
+  }[pressure];
   const statusLabel = gameWon ? "Stage clear" : gameOver ? "Run ended" : isPaused ? "Paused" : "Aim and release";
 
   return (
     <div
-      className="relative min-h-[calc(100vh-4rem)] overflow-hidden bg-slate-950 py-8 text-white sm:py-12"
+      className="relative min-h-[calc(100vh-4rem)] overflow-hidden bg-slate-950 py-0 text-white sm:py-6"
       style={{
         backgroundImage:
           "radial-gradient(circle at 15% 10%, rgba(217,70,239,0.18), transparent 28%), radial-gradient(circle at 85% 25%, rgba(59,130,246,0.16), transparent 30%), linear-gradient(180deg, #090d1b 0%, #11152a 52%, #080b16 100%)",
@@ -567,21 +646,22 @@ export default function PuzzleBobbleGame() {
       <div className="pointer-events-none absolute inset-0 opacity-30" style={{ backgroundImage: "radial-gradient(rgba(255,255,255,0.35) 1px, transparent 1px)", backgroundSize: "34px 34px" }} />
 
       <Container size="xl" className="relative">
-        <header className="mb-7 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,430px)_minmax(300px,390px)] lg:justify-center lg:gap-6 xl:gap-9">
+        <header className="order-1 flex flex-col gap-2 lg:col-start-2 lg:row-start-1">
           <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 py-2 text-sm font-black uppercase tracking-[0.18em] text-fuchsia-200">
+            <div className="mb-2 hidden items-center gap-2 rounded-full border border-fuchsia-300/25 bg-fuchsia-400/10 px-3 py-1.5 text-xs font-black uppercase tracking-[0.18em] text-fuchsia-200 sm:inline-flex">
               <span className="i-ph-sparkle-fill text-fuchsia-300" />
               Neon arcade
             </div>
-            <h1 className="text-4xl font-black tracking-[-0.04em] text-white sm:text-6xl">
+            <h1 className="text-3xl font-black tracking-[-0.04em] text-white sm:text-4xl lg:text-5xl">
               Puzzle <span className="bg-gradient-to-r from-fuchsia-300 via-violet-300 to-cyan-300 bg-clip-text text-transparent">Bobble</span>
             </h1>
-            <p className="mt-3 max-w-2xl text-base leading-7 text-slate-300 sm:text-lg">
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
               Bank shots off the walls, build color chains, and clear the ceiling before it closes in.
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-3" aria-label="Game controls">
+          <div className="flex flex-wrap gap-2" aria-label="Game controls">
             <button
               type="button"
               onClick={toggleMuted}
@@ -612,33 +692,29 @@ export default function PuzzleBobbleGame() {
           </div>
         </header>
 
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,620px)_minmax(280px,360px)] lg:justify-center xl:gap-9">
-          <section className="mx-auto w-full max-w-[620px]" aria-label="Puzzle Bobble game">
-            <div className="mb-4 grid grid-cols-3 gap-3">
-              <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/8 px-4 py-3 shadow-lg shadow-black/15 backdrop-blur">
-                <div className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Score</div>
-                <div className="mt-1 text-2xl font-black tabular-nums text-white sm:text-3xl">{score.toLocaleString()}</div>
-                {lastGain > 0 && <div className="absolute right-3 top-3 text-sm font-black text-emerald-300">+{lastGain}</div>}
+          <section className="order-2 mx-auto w-full max-w-[430px] lg:col-start-1 lg:row-span-2 lg:row-start-1" aria-label="Puzzle Bobble game">
+            <div className="mb-3 grid grid-cols-4 gap-2">
+              <div className="relative overflow-hidden rounded-xl border border-white/10 bg-white/8 px-3 py-2 shadow-lg shadow-black/15 backdrop-blur">
+                <div className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Score</div>
+                <div className="mt-0.5 text-xl font-black tabular-nums text-white sm:text-2xl">{score.toLocaleString()}</div>
+                {lastGain > 0 && <div className="absolute right-2 top-2 text-xs font-black text-emerald-300">+{lastGain}</div>}
               </div>
-              <div className="rounded-2xl border border-white/10 bg-white/8 px-4 py-3 shadow-lg shadow-black/15 backdrop-blur">
-                <div className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Drop in</div>
-                <div className="mt-1 flex items-center gap-2">
-                  <span className="text-2xl font-black tabular-nums text-rose-300 sm:text-3xl">{shotsUntilDrop}</span>
-                  <div className="flex gap-1" aria-hidden="true">
-                    {Array.from({ length: SHOTS_BEFORE_DROP }).map((_, index) => (
-                      <span key={index} className={`h-2 w-2 rounded-full ${index < shotsUntilDrop ? "bg-rose-300" : "bg-white/15"}`} />
-                    ))}
-                  </div>
-                </div>
+              <div className="rounded-xl border border-white/10 bg-white/8 px-3 py-2 shadow-lg shadow-black/15 backdrop-blur">
+                <div className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Best</div>
+                <div className="mt-0.5 text-xl font-black tabular-nums text-yellow-200 sm:text-2xl">{bestScore.toLocaleString()}</div>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-white/8 px-4 py-3 shadow-lg shadow-black/15 backdrop-blur">
-                <div className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Chain</div>
-                <div className="mt-1 text-2xl font-black tabular-nums text-cyan-300 sm:text-3xl">×{Math.max(1, combo)}</div>
+              <div className="rounded-xl border border-white/10 bg-white/8 px-3 py-2 shadow-lg shadow-black/15 backdrop-blur">
+                <div className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Drop in</div>
+                <div className="mt-0.5 text-xl font-black tabular-nums text-rose-300 sm:text-2xl">{shotsUntilDrop}</div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/8 px-3 py-2 shadow-lg shadow-black/15 backdrop-blur">
+                <div className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Chain</div>
+                <div className="mt-0.5 text-xl font-black tabular-nums text-cyan-300 sm:text-2xl">×{Math.max(1, combo)}</div>
               </div>
             </div>
 
-            <div className="rounded-[2rem] bg-gradient-to-br from-fuchsia-400 via-violet-500 to-cyan-400 p-[3px] shadow-[0_28px_90px_rgba(76,29,149,0.42)]">
-              <div className="relative overflow-hidden rounded-[calc(2rem-3px)] bg-slate-950 p-2 sm:p-3">
+            <div className="mx-auto w-full max-w-[342px] rounded-[1.65rem] bg-gradient-to-br from-fuchsia-400 via-violet-500 to-cyan-400 p-[3px] shadow-[0_24px_70px_rgba(76,29,149,0.38)] sm:max-w-none">
+              <div className="relative overflow-hidden rounded-[calc(1.65rem-3px)] bg-slate-950 p-2">
                 <canvas
                   ref={canvasRef}
                   className="block aspect-[352/450] w-full cursor-crosshair rounded-[1.35rem] bg-slate-900 outline-none"
@@ -659,7 +735,7 @@ export default function PuzzleBobbleGame() {
                 />
 
                 {(isPaused || gameOver || gameWon) && (
-                  <div className="absolute inset-2 flex items-center justify-center rounded-[1.35rem] bg-slate-950/82 p-6 text-center backdrop-blur-sm sm:inset-3">
+                  <div className="absolute inset-2 flex items-center justify-center rounded-[1.35rem] bg-slate-950/82 p-6 text-center backdrop-blur-sm">
                     <div className="max-w-sm">
                       <div className={`mx-auto mb-4 h-16 w-16 ${gameWon ? "i-ph-trophy-fill text-yellow-300" : gameOver ? "i-ph-skull-duotone text-rose-300" : "i-ph-pause-circle-fill text-cyan-300"}`} />
                       <div className="text-sm font-black uppercase tracking-[0.22em] text-slate-400">{statusLabel}</div>
@@ -681,14 +757,55 @@ export default function PuzzleBobbleGame() {
               </div>
             </div>
 
-            <div className="mt-4 flex items-center justify-center gap-2 text-center text-sm font-semibold text-slate-400 sm:text-base">
-              <span className="i-ph-hand-tap-duotone text-xl text-cyan-300" />
-              Drag to aim, then release to shoot
+            <div className="mt-2 grid grid-cols-[1fr_1.35fr_1fr] gap-2 lg:hidden" aria-label="Aim and shoot controls">
+              <button
+                type="button"
+                onClick={() => nudgeAim("left")}
+                disabled={gameOver || gameWon || isPaused}
+                className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/8 font-black text-slate-100 transition hover:border-cyan-300/40 hover:bg-white/14 focus:outline-none focus:ring-3 focus:ring-cyan-400/40 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Aim left"
+              >
+                <span className="i-ph-arrow-left-bold text-xl" />
+                <span className="hidden min-[360px]:inline">Left</span>
+              </button>
+              <button
+                type="button"
+                onClick={shoot}
+                disabled={gameOver || gameWon || isPaused}
+                className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-3 font-black text-white shadow-lg shadow-cyan-950/30 transition hover:-translate-y-0.5 focus:outline-none focus:ring-3 focus:ring-cyan-300/50 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Shoot bubble"
+              >
+                <span className="i-ph-crosshair-simple-fill text-xl" />
+                Shoot
+              </button>
+              <button
+                type="button"
+                onClick={() => nudgeAim("right")}
+                disabled={gameOver || gameWon || isPaused}
+                className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/8 font-black text-slate-100 transition hover:border-cyan-300/40 hover:bg-white/14 focus:outline-none focus:ring-3 focus:ring-cyan-400/40 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Aim right"
+              >
+                <span className="hidden min-[360px]:inline">Right</span>
+                <span className="i-ph-arrow-right-bold text-xl" />
+              </button>
             </div>
+
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-1 text-xs font-bold sm:text-sm">
+              <div className={`flex items-center gap-2 ${pressureDetails.color}`}>
+                <span className={`h-2 w-2 rounded-full ${pressureDetails.dot}`} aria-hidden="true" />
+                {pressureDetails.label}
+              </div>
+              <div className="flex items-center gap-1.5 text-slate-400">
+                <span className="i-ph-hand-tap-duotone text-lg text-cyan-300" />
+                Drag and release also shoots
+              </div>
+            </div>
+
+            <p className="sr-only" role="status" aria-live="polite">{statusMessage}</p>
           </section>
 
-          <aside className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-            <div className="rounded-3xl border border-white/10 bg-white/7 p-6 shadow-xl shadow-black/15 backdrop-blur">
+          <aside className="order-3 grid gap-3 sm:grid-cols-2 lg:col-start-2 lg:row-start-2 lg:grid-cols-1">
+            <div className="rounded-3xl border border-white/10 bg-white/7 p-4 shadow-xl shadow-black/15 backdrop-blur">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <div className="text-xs font-black uppercase tracking-[0.18em] text-fuchsia-300">Mission</div>
@@ -701,7 +818,7 @@ export default function PuzzleBobbleGame() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-white/10 bg-white/7 p-6 shadow-xl shadow-black/15 backdrop-blur">
+            <div className="rounded-3xl border border-white/10 bg-white/7 p-4 shadow-xl shadow-black/15 backdrop-blur">
               <h2 className="flex items-center gap-2 text-lg font-black text-white">
                 <span className="i-ph-keyboard-duotone text-2xl text-cyan-300" />
                 Controls
@@ -714,7 +831,7 @@ export default function PuzzleBobbleGame() {
               </dl>
             </div>
 
-            <div className="rounded-3xl border border-amber-300/15 bg-amber-300/8 p-6 sm:col-span-2 lg:col-span-1">
+            <div className="rounded-3xl border border-amber-300/15 bg-amber-300/8 p-4 sm:col-span-2 lg:col-span-1">
               <h2 className="flex items-center gap-2 text-lg font-black text-amber-100">
                 <span className="i-ph-warning-diamond-fill text-2xl text-amber-300" />
                 Pressure rule
@@ -724,7 +841,7 @@ export default function PuzzleBobbleGame() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-white/10 bg-white/7 p-6 sm:col-span-2 lg:col-span-1">
+            <div className="rounded-3xl border border-white/10 bg-white/7 p-4 sm:col-span-2 lg:col-span-1">
               <h2 className="text-sm font-black uppercase tracking-[0.18em] text-slate-400">Color symbols</h2>
               <div className="mt-4 grid grid-cols-3 gap-3">
                 {COLORS.map((color) => (

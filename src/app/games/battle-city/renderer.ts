@@ -11,21 +11,21 @@ import {
 } from "./utils";
 
 const COLORS = {
-  BACKGROUND: "#1a1a1a",
-  BORDER: "#333",
-  BRICK: "#d4552d",
-  STEEL: "#888",
-  WATER: "#0066cc",
-  FOREST: "#228822",
-  ICE: "#aaf",
-  PLAYER_TANK: "#ffff00",
-  ENEMY_TANK: "#ff0000",
-  BASE: "#00ff00",
-  BASE_DAMAGED: "#ff8800",
-  BULLET: "#ffff00",
-  SIDEBAR_BG: "#222",
-  TEXT: "#ffffff",
-  TEXT_DIM: "#888",
+  BACKGROUND: "#080b10",
+  BORDER: "#334155",
+  BRICK: "#c2412d",
+  STEEL: "#94a3b8",
+  WATER: "#0369a1",
+  FOREST: "#166534",
+  ICE: "#bae6fd",
+  PLAYER_TANK: "#facc15",
+  ENEMY_TANK: "#ef4444",
+  BASE: "#4ade80",
+  BASE_DAMAGED: "#f97316",
+  BULLET: "#fde047",
+  SIDEBAR_BG: "#111827",
+  TEXT: "#f8fafc",
+  TEXT_DIM: "#94a3b8",
 };
 
 export const drawScene = (ctx: CanvasRenderingContext2D, state: GameState) => {
@@ -82,10 +82,26 @@ const drawMap = (ctx: CanvasRenderingContext2D, state: GameState) => {
       const pixelX = x * TILE_SIZE;
       const pixelY = y * TILE_SIZE;
 
+      ctx.fillStyle = (x + y) % 2 === 0 ? "#0b1017" : "#0d131b";
+      ctx.fillRect(pixelX, pixelY, TILE_SIZE, TILE_SIZE);
+
       switch (tile) {
         case 1: // Brick
           ctx.fillStyle = COLORS.BRICK;
           ctx.fillRect(pixelX, pixelY, TILE_SIZE, TILE_SIZE);
+          ctx.fillStyle = "#fb923c";
+          ctx.fillRect(pixelX + 1, pixelY + 1, 6, 2);
+          ctx.fillRect(pixelX + 9, pixelY + 9, 6, 2);
+          ctx.strokeStyle = "#7c2d12";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(pixelX, pixelY + 8);
+          ctx.lineTo(pixelX + TILE_SIZE, pixelY + 8);
+          ctx.moveTo(pixelX + 8, pixelY);
+          ctx.lineTo(pixelX + 8, pixelY + 8);
+          ctx.moveTo(pixelX + 5, pixelY + 8);
+          ctx.lineTo(pixelX + 5, pixelY + TILE_SIZE);
+          ctx.stroke();
           // Draw damage indicator
           const health = state.brickHealth[y]?.[x] ?? 0;
           if (health < 1) {
@@ -94,28 +110,51 @@ const drawMap = (ctx: CanvasRenderingContext2D, state: GameState) => {
           }
           break;
         case 2: // Steel
-          ctx.fillStyle = COLORS.STEEL;
+          const steel = ctx.createLinearGradient(pixelX, pixelY, pixelX + TILE_SIZE, pixelY + TILE_SIZE);
+          steel.addColorStop(0, "#e2e8f0");
+          steel.addColorStop(0.45, COLORS.STEEL);
+          steel.addColorStop(1, "#475569");
+          ctx.fillStyle = steel;
           ctx.fillRect(pixelX, pixelY, TILE_SIZE, TILE_SIZE);
-          ctx.strokeStyle = "#666";
+          ctx.strokeStyle = "#334155";
           ctx.lineWidth = 1;
           ctx.strokeRect(pixelX + 2, pixelY + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+          ctx.fillStyle = "#334155";
+          ctx.fillRect(pixelX + 3, pixelY + 3, 2, 2);
+          ctx.fillRect(pixelX + 11, pixelY + 11, 2, 2);
           break;
         case 3: // Forest
           ctx.fillStyle = COLORS.FOREST;
           ctx.fillRect(pixelX, pixelY, TILE_SIZE, TILE_SIZE);
+          ctx.fillStyle = "#22c55e";
+          ctx.beginPath();
+          ctx.arc(pixelX + 5, pixelY + 6, 4, 0, Math.PI * 2);
+          ctx.arc(pixelX + 11, pixelY + 9, 5, 0, Math.PI * 2);
+          ctx.fill();
           break;
         case 4: // Water
           ctx.fillStyle = COLORS.WATER;
           ctx.fillRect(pixelX, pixelY, TILE_SIZE, TILE_SIZE);
-          ctx.fillStyle = "rgba(0, 102, 204, 0.5)";
-          ctx.fillRect(pixelX + 2, pixelY + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+          ctx.strokeStyle = "#38bdf8";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          const wave = Math.sin(state.time / 220 + x + y) * 1.5;
+          ctx.moveTo(pixelX + 2, pixelY + 5 + wave);
+          ctx.lineTo(pixelX + 14, pixelY + 5 - wave);
+          ctx.moveTo(pixelX + 2, pixelY + 11 - wave);
+          ctx.lineTo(pixelX + 14, pixelY + 11 + wave);
+          ctx.stroke();
           break;
         case 5: // Ice
           ctx.fillStyle = COLORS.ICE;
           ctx.fillRect(pixelX, pixelY, TILE_SIZE, TILE_SIZE);
-          ctx.strokeStyle = "#ddf";
+          ctx.strokeStyle = "#f0f9ff";
           ctx.lineWidth = 1;
           ctx.strokeRect(pixelX + 2, pixelY + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+          ctx.beginPath();
+          ctx.moveTo(pixelX + 4, pixelY + 12);
+          ctx.lineTo(pixelX + 12, pixelY + 4);
+          ctx.stroke();
           break;
       }
     }
@@ -175,6 +214,8 @@ const drawTank = (
   const size = TANK_SIZE * TILE_SIZE;
 
   ctx.fillStyle = color;
+  ctx.strokeStyle = "rgba(2, 6, 23, 0.9)";
+  ctx.lineWidth = 2;
 
   // Cannon
   const cannonX = x + size / 2;
@@ -209,6 +250,7 @@ const drawTank = (
 
   // Tank body
   ctx.fillRect(x, y, size, size);
+  ctx.strokeRect(x + 1, y + 1, size - 2, size - 2);
 
   // Tank tracks
   ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
@@ -258,10 +300,14 @@ const drawStar = (ctx: CanvasRenderingContext2D, x: number, y: number, size: num
 
 const drawBullets = (ctx: CanvasRenderingContext2D, state: GameState) => {
   for (const bullet of state.bullets) {
+    ctx.save();
     ctx.fillStyle = bullet.isPlayer ? COLORS.BULLET : "#ff6666";
+    ctx.shadowColor = bullet.isPlayer ? "#fde047" : "#ef4444";
+    ctx.shadowBlur = 7;
     ctx.beginPath();
-    ctx.arc(bullet.x, bullet.y, 2, 0, Math.PI * 2);
+    ctx.arc(bullet.x, bullet.y, 2.5, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
   }
 };
 
@@ -382,6 +428,27 @@ const drawSidebar = (ctx: CanvasRenderingContext2D, state: GameState) => {
   yOffset += 15;
   ctx.font = "bold 12px monospace";
   ctx.fillText(String(state.hiScore).padStart(6, "0"), sidebarX + 8, yOffset);
+
+  yOffset += 34;
+  ctx.fillStyle = COLORS.TEXT_DIM;
+  ctx.font = "10px monospace";
+  ctx.fillText("ENEMY", sidebarX + 12, yOffset);
+  yOffset += 12;
+  const remaining = state.enemies.length + state.enemyQueue.length;
+  for (let i = 0; i < Math.min(remaining, 12); i++) {
+    const iconX = sidebarX + 12 + (i % 3) * 15;
+    const iconY = yOffset + Math.floor(i / 3) * 14;
+    ctx.fillStyle = i < state.enemies.length ? "#fb7185" : "#64748b";
+    ctx.fillRect(iconX, iconY, 8, 10);
+  }
+
+  yOffset += 70;
+  ctx.fillStyle = COLORS.TEXT_DIM;
+  ctx.fillText("ARMOR", sidebarX + 12, yOffset);
+  ctx.fillStyle = "#334155";
+  ctx.fillRect(sidebarX + 8, yOffset + 7, 48, 5);
+  ctx.fillStyle = state.player.health > 50 ? "#4ade80" : "#f97316";
+  ctx.fillRect(sidebarX + 8, yOffset + 7, 48 * Math.max(0, state.player.health / state.player.maxHealth), 5);
 };
 
 const drawMenuOverlay = (ctx: CanvasRenderingContext2D) => {

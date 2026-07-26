@@ -76,6 +76,16 @@ export interface GameState {
   bossActive: boolean;
 }
 
+export type MissionRank = 'Cadet' | 'Wingman' | 'Ace' | 'Legend';
+export type ThreatLevel = 'Clear' | 'Engaged' | 'Critical' | 'Boss';
+
+export interface MissionTelemetry {
+  rank: MissionRank;
+  threat: ThreatLevel;
+  sectorStep: number;
+  bossIn: number;
+}
+
 // Game constants
 const PLAYER_WIDTH = 24;
 const PLAYER_HEIGHT = 24;
@@ -114,7 +124,7 @@ export function createInitialState(): GameState {
   };
 }
 
-export function startGame(state: GameState): GameState {
+export function startGame(): GameState {
   const initialState = createInitialState();
   return {
     ...initialState,
@@ -136,7 +146,7 @@ export function updateGameState(
   },
   deltaTime: number
 ): GameState {
-  if (state.mode === 'menu') {
+  if (state.mode === 'menu' || state.mode === 'gameOver') {
     return state;
   }
 
@@ -158,7 +168,11 @@ export function updateGameState(
     };
   }
 
-  const newState = { ...state, time: state.time + deltaTime };
+  const newState = {
+    ...state,
+    time: state.time + deltaTime,
+    player: { ...state.player },
+  };
 
   // Update player position with touch or keyboard
   const moveDistance = PLAYER_SPEED * deltaTime;
@@ -254,7 +268,7 @@ export function updateGameState(
       }
     }
 
-    shootCooldown = wType === 'laser' ? 0.05 : (wType === 'missile' ? 0.35 : 0.12);
+    shootCooldown = wType === 'laser' ? 0.05 : (wType === 'missile' ? 0.35 : PLAYER_SHOOT_COOLDOWN);
   }
 
   // Update bullets
@@ -458,7 +472,7 @@ export function updateGameState(
   enemies = enemies.filter((e) => e.y < CANVAS_HEIGHT + 20);
 
   // Update enemy bullets
-  let filteredEnemyBullets = enemyBullets.filter((b) => b.y < CANVAS_HEIGHT + 10 && b.x > -20 && b.x < CANVAS_WIDTH + 20);
+  let filteredEnemyBullets = enemyBullets.filter((b) => b.y > -20 && b.y < CANVAS_HEIGHT + 10 && b.x > -20 && b.x < CANVAS_WIDTH + 20);
   filteredEnemyBullets = filteredEnemyBullets.map((b) => ({
     ...b,
     x: b.x + b.vx * deltaTime,
@@ -497,11 +511,11 @@ export function updateGameState(
 
         if (newHealth <= 0) {
           if (enemy.type === 'boss') bossDied = true;
-          score += (enemy.type === 'boss' ? 5000 : 100) * newState.wave * (1 + combo * 0.1);
+          score += Math.round((enemy.type === 'boss' ? 5000 : 100) * newState.wave * (1 + combo * 0.1));
           combo += 1;
 
           // Drop power-up
-          let dropChance = enemy.type === 'boss' ? 1.0 : (enemy.type === 'heavy' ? 0.6 : 0.2);
+          const dropChance = enemy.type === 'boss' ? 1.0 : (enemy.type === 'heavy' ? 0.6 : 0.2);
           if (Math.random() < dropChance) {
             const numDrops = enemy.type === 'boss' ? 5 : 1;
             for(let i=0; i<numDrops; i++) {
@@ -683,7 +697,64 @@ export function togglePause(state: GameState): GameState {
   return state;
 }
 
-export function restartGame(state: GameState): GameState {
-  return startGame(createInitialState());
+export function restartGame(): GameState {
+  return startGame();
 }
 
+export function getMissionTelemetry(state: GameState): MissionTelemetry {
+  const rank: MissionRank = state.score >= 25000
+    ? 'Legend'
+    : state.score >= 8000
+      ? 'Ace'
+      : state.score >= 2000
+        ? 'Wingman'
+        : 'Cadet';
+  const pressure = state.enemies.length * 2 + state.enemyBullets.length;
+  const threat: ThreatLevel = state.bossActive
+    ? 'Boss'
+    : pressure >= 18
+      ? 'Critical'
+      : pressure >= 8
+        ? 'Engaged'
+        : 'Clear';
+  const sectorStep = ((Math.max(1, state.wave) - 1) % 5) + 1;
+
+  return {
+    rank,
+    threat,
+    sectorStep,
+    bossIn: sectorStep === 5 ? 0 : 5 - sectorStep,
+  };
+}
+
+export function sanitizeBestScore(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : 0;
+}
+
+export function renderGameStateText(state: GameState, bestScore: number = 0): string {
+  const telemetry = getMissionTelemetry(state);
+  return JSON.stringify({
+    mode: state.mode,
+    score: state.score,
+    bestScore: sanitizeBestScore(bestScore),
+    wave: state.wave,
+    rank: telemetry.rank,
+    threat: telemetry.threat,
+    bossIn: telemetry.bossIn,
+    lives: state.lives,
+    player: {
+      x: Math.round(state.player.x),
+      y: Math.round(state.player.y),
+      health: state.player.health,
+      weapon: state.player.weaponType,
+      weaponLevel: state.player.weaponLevel,
+    },
+    enemies: state.enemies.length,
+    playerBullets: state.playerBullets.length,
+    enemyBullets: state.enemyBullets.length,
+    powerUps: state.powerUps.length,
+    combo: state.combo,
+  });
+}

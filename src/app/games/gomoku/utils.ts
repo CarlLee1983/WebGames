@@ -9,6 +9,21 @@ export type Move = {
   row: number;
   col: number;
 };
+export type GameMode = "local" | "computer";
+export type MoveRecord = Move & { player: Player };
+export type WinningLine = Move[];
+
+export type GameSnapshot = {
+  board: Board;
+  isBlackNext: boolean;
+  lastMove: MoveRecord | null;
+};
+
+export type GomokuGameState = GameSnapshot & {
+  winner: Winner;
+  winningLine: WinningLine | null;
+  history: GameSnapshot[];
+};
 
 type DifficultySettings = {
   attackWeight: number;
@@ -66,37 +81,42 @@ export function isBoardFull(board: Board): boolean {
 }
 
 export function checkWinner(row: number, col: number, player: Player, board: Board): boolean {
+  return getWinningLine(row, col, player, board) !== null;
+}
+
+export function getWinningLine(
+  row: number,
+  col: number,
+  player: Player,
+  board: Board,
+): WinningLine | null {
   for (const [dr, dc] of DIRECTIONS) {
-    let count = 1;
+    const line: Move[] = [];
 
-    for (let step = 1; step < 5; step += 1) {
-      const nextRow = row + dr * step;
-      const nextCol = col + dc * step;
-
-      if (!isWithinBounds(nextRow, nextCol) || board[nextRow][nextCol] !== player) {
-        break;
-      }
-
-      count += 1;
+    let nextRow = row - dr;
+    let nextCol = col - dc;
+    while (isWithinBounds(nextRow, nextCol) && board[nextRow][nextCol] === player) {
+      line.unshift({ row: nextRow, col: nextCol });
+      nextRow -= dr;
+      nextCol -= dc;
     }
 
-    for (let step = 1; step < 5; step += 1) {
-      const nextRow = row - dr * step;
-      const nextCol = col - dc * step;
+    line.push({ row, col });
 
-      if (!isWithinBounds(nextRow, nextCol) || board[nextRow][nextCol] !== player) {
-        break;
-      }
-
-      count += 1;
+    nextRow = row + dr;
+    nextCol = col + dc;
+    while (isWithinBounds(nextRow, nextCol) && board[nextRow][nextCol] === player) {
+      line.push({ row: nextRow, col: nextCol });
+      nextRow += dr;
+      nextCol += dc;
     }
 
-    if (count >= 5) {
-      return true;
+    if (line.length >= 5) {
+      return line;
     }
   }
 
-  return false;
+  return null;
 }
 
 export function playMove(
@@ -104,7 +124,7 @@ export function playMove(
   row: number,
   col: number,
   player: Player,
-): { board: Board; winner: Winner } | null {
+): { board: Board; winner: Winner; winningLine: WinningLine | null } | null {
   if (!isWithinBounds(row, col) || board[row][col] !== null) {
     return null;
   }
@@ -112,15 +132,90 @@ export function playMove(
   const nextBoard = cloneBoard(board);
   nextBoard[row][col] = player;
 
-  if (checkWinner(row, col, player, nextBoard)) {
-    return { board: nextBoard, winner: player };
+  const winningLine = getWinningLine(row, col, player, nextBoard);
+  if (winningLine) {
+    return { board: nextBoard, winner: player, winningLine };
   }
 
   if (isBoardFull(nextBoard)) {
-    return { board: nextBoard, winner: "draw" };
+    return { board: nextBoard, winner: "draw", winningLine: null };
   }
 
-  return { board: nextBoard, winner: null };
+  return { board: nextBoard, winner: null, winningLine: null };
+}
+
+export function createInitialGameState(): GomokuGameState {
+  return {
+    board: createEmptyBoard(),
+    isBlackNext: true,
+    winner: null,
+    winningLine: null,
+    lastMove: null,
+    history: [],
+  };
+}
+
+export function applyGameMove(
+  state: GomokuGameState,
+  row: number,
+  col: number,
+  player: Player,
+): GomokuGameState {
+  if (state.winner || getCurrentPlayer(state.isBlackNext) !== player) {
+    return state;
+  }
+
+  const result = playMove(state.board, row, col, player);
+  if (!result) {
+    return state;
+  }
+
+  const lastMove = { row, col, player } satisfies MoveRecord;
+  return {
+    board: result.board,
+    isBlackNext: result.winner ? state.isBlackNext : !state.isBlackNext,
+    winner: result.winner,
+    winningLine: result.winningLine,
+    lastMove,
+    history: [
+      ...state.history,
+      {
+        board: cloneBoard(state.board),
+        isBlackNext: state.isBlackNext,
+        lastMove: state.lastMove ? { ...state.lastMove } : null,
+      },
+    ],
+  };
+}
+
+export function undoGame(state: GomokuGameState, gameMode: GameMode): GomokuGameState {
+  if (state.history.length === 0) {
+    return state;
+  }
+
+  const movesToUndo =
+    gameMode === "computer" && state.lastMove?.player === "white"
+      ? Math.min(2, state.history.length)
+      : 1;
+  const nextHistoryLength = state.history.length - movesToUndo;
+  const snapshot = state.history[nextHistoryLength];
+
+  if (!snapshot) {
+    return createInitialGameState();
+  }
+
+  return {
+    board: cloneBoard(snapshot.board),
+    isBlackNext: snapshot.isBlackNext,
+    winner: null,
+    winningLine: null,
+    lastMove: snapshot.lastMove ? { ...snapshot.lastMove } : null,
+    history: state.history.slice(0, nextHistoryLength),
+  };
+}
+
+export function stateToRows(state: Pick<GomokuGameState, "board">): string[] {
+  return state.board.map((row) => row.map((cell) => (cell === "black" ? "B" : cell === "white" ? "W" : ".")).join(""));
 }
 
 export function getComputerMove(

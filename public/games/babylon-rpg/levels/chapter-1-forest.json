@@ -3,7 +3,7 @@
   "chapter": 1,
   "title": "Forest Shrine",
   "mode": "battle",
-  "description": "A combat chapter that opens the shrine gate only after every Enemy-tagged creature is gone.",
+  "description": "Track down three shrine guardians, read their pursuit range, and open the sealed forest gate.",
   "glbUrl": "/WebGames/games/babylon-rpg/maps/chapter-1-forest.glb",
   "hasGlb": false,
   "playerSpawn": { "x": 0, "y": 1.25, "z": -12, "yaw": 0 },

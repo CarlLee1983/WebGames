@@ -191,17 +191,21 @@ export const createInitialState = (): GameState => {
 
   const [playerX, playerY] = gridToPixels(map.playerSpawn.x, map.playerSpawn.y);
 
-  const hiScoreStr =
-    typeof window !== "undefined"
-      ? localStorage.getItem("battle-city-hi-score")
-      : null;
+  let hiScore = 0;
+  if (typeof window !== "undefined") {
+    try {
+      hiScore = Number.parseInt(localStorage.getItem("battle-city-hi-score") ?? "0", 10) || 0;
+    } catch {
+      // Storage can be unavailable in private browsing; the game remains playable.
+    }
+  }
 
   return {
     mode: "menu",
     stage: 1,
     lives: 3,
     score: 0,
-    hiScore: hiScoreStr ? parseInt(hiScoreStr) : 0,
+    hiScore,
     time: 0,
 
     mapGrid: map.grid,
@@ -277,8 +281,44 @@ export const startGame = (state: GameState): GameState => {
   };
 };
 
+export const advanceStage = (state: GameState): GameState => {
+  if (state.mode !== "stageComplete") return state;
+
+  const stage = state.stage + 1;
+  const map = getMap(stage);
+  const nextState: GameState = {
+    ...state,
+    stage,
+    mapGrid: map.grid.map((row) => [...row]),
+    brickHealth: map.grid.map((row) => row.map((tile) => (tile === 1 ? 1 : 0))),
+    baseDestroyed: false,
+    enemyQueue: ["basic", "basic", "fast", "basic", "armored", "basic", "basic", "fast"],
+    enemySpawnTimer: 0,
+    enemyAIMap: {},
+    enemiesDefeated: 0,
+    powerUp: null,
+    frozenTimer: 0,
+    shovelTimer: 0,
+    playerInput: "none",
+  };
+
+  return startGame(nextState);
+};
+
 export const tick = (state: GameState, deltaMs: number): GameState => {
-  let newState = { ...state, time: state.time + deltaMs };
+  let newState: GameState = {
+    ...state,
+    time: state.time + deltaMs,
+    mapGrid: state.mapGrid.map((row) => [...row]),
+    brickHealth: state.brickHealth.map((row) => [...row]),
+    player: { ...state.player },
+    enemies: state.enemies.map((enemy) => ({ ...enemy })),
+    bullets: state.bullets.map((bullet) => ({ ...bullet })),
+    particles: state.particles.map((particle) => ({ ...particle })),
+    enemyQueue: [...state.enemyQueue],
+    enemyAIMap: { ...state.enemyAIMap },
+    powerUp: state.powerUp ? { ...state.powerUp } : null,
+  };
 
   // Update screen shake
   newState.shakeIntensity = Math.max(0, newState.shakeIntensity - deltaMs * 0.02);
@@ -417,15 +457,15 @@ export const tick = (state: GameState, deltaMs: number): GameState => {
       }))
       .filter((p) => p.life > 0);
 
+    newState.frozenTimer = Math.max(0, newState.frozenTimer - deltaMs);
+    newState.shovelTimer = Math.max(0, newState.shovelTimer - deltaMs);
+    const enemiesFrozen = newState.frozenTimer > 0;
+
     // Spawn enemies
     newState.enemySpawnTimer -= deltaMs;
     const maxEnemies = 4;
     if (newState.enemySpawnTimer <= 0 && newState.enemies.length < maxEnemies && newState.enemyQueue.length > 0) {
-      const spawnPoints = [
-        { x: 0, y: 0 },
-        { x: 12, y: 0 },
-        { x: 24, y: 0 },
-      ];
+      const spawnPoints = getMap(newState.stage).enemySpawns;
       const spawnPoint = spawnPoints[Math.floor(Math.random() * spawnPoints.length)];
       const [spawnX, spawnY] = gridToPixels(spawnPoint.x, spawnPoint.y);
 
@@ -456,13 +496,10 @@ export const tick = (state: GameState, deltaMs: number): GameState => {
       const enemy = newState.enemies[i];
       const newEnemy = { ...enemy };
 
-      // Get AI decision
-      const [updatedAI, moveDir, shouldShoot] = updateEnemyAI(
-        newState.enemyAIMap[enemy.id],
-        enemy,
-        newState,
-        deltaMs
-      );
+      const aiState = newState.enemyAIMap[enemy.id] ?? createEnemyAI(enemy.id);
+      const [updatedAI, moveDir, shouldShoot] = enemiesFrozen
+        ? [aiState, enemy.direction, false] as const
+        : updateEnemyAI(aiState, enemy, newState, deltaMs);
       newState.enemyAIMap[enemy.id] = updatedAI;
 
       // Move enemy
@@ -482,7 +519,7 @@ export const tick = (state: GameState, deltaMs: number): GameState => {
         else nextY = newEnemy.y;
       }
 
-      if (canMoveToPixels(nextX, nextY, newState.mapGrid)) {
+      if (!enemiesFrozen && canMoveToPixels(nextX, nextY, newState.mapGrid)) {
         newEnemy.x = nextX;
         newEnemy.y = nextY;
       }
@@ -584,6 +621,8 @@ export const tick = (state: GameState, deltaMs: number): GameState => {
           const playerX = newState.player.x + TANK_SIZE * TILE_SIZE / 2;
           const playerY = newState.player.y + TANK_SIZE * TILE_SIZE / 2;
 
+          const absorbedByShield = Boolean(newState.player.shield);
+
           // Spawn hit particles
           for (let p = 0; p < 6; p++) {
             const angle = (p / 6) * Math.PI * 2;
@@ -595,20 +634,26 @@ export const tick = (state: GameState, deltaMs: number): GameState => {
               vy: Math.sin(angle) * speed,
               life: 300,
               maxLife: 300,
-              color: "#ffff00",
+              color: absorbedByShield ? "#22d3ee" : "#ffff00",
               size: 2 + Math.random() * 1.5,
             });
           }
 
-          newState.shakeIntensity = 5;
-          newState.player.health -= bullet.power * 50;
-          if (newState.player.health <= 0) {
-            newState.lives--;
-            if (newState.lives <= 0) {
-              newState.mode = "gameOver";
-            } else {
-              newState.player.health = newState.player.maxHealth;
-              newState.player.invincible = PLAYER_INVINCIBLE_TIME;
+          if (absorbedByShield) {
+            newState.shakeIntensity = 2;
+            newState.player.shield = false;
+            newState.player.invincible = 350;
+          } else {
+            newState.shakeIntensity = 5;
+            newState.player.health -= bullet.power * 50;
+            if (newState.player.health <= 0) {
+              newState.lives--;
+              if (newState.lives <= 0) {
+                newState.mode = "gameOver";
+              } else {
+                newState.player.health = newState.player.maxHealth;
+                newState.player.invincible = PLAYER_INVINCIBLE_TIME;
+              }
             }
           }
           hitTank = true;
@@ -632,15 +677,6 @@ export const tick = (state: GameState, deltaMs: number): GameState => {
       }
     }
 
-    // Update frozen timer and apply frozen effect
-    newState.frozenTimer = Math.max(0, newState.frozenTimer - deltaMs);
-    if (newState.frozenTimer > 0) {
-      // Enemies can't move or shoot when frozen
-      newState.enemies = newState.enemies.map((e) => ({ ...e, speed: 0, shootCooldown: 1000 }));
-    }
-
-    // Update shovel timer for base protection
-    newState.shovelTimer = Math.max(0, newState.shovelTimer - deltaMs);
     if (newState.shovelTimer > 0) {
       // Base is protected
       newState.baseDestroyed = false;
@@ -670,7 +706,11 @@ export const tick = (state: GameState, deltaMs: number): GameState => {
     if (newState.score > newState.hiScore) {
       newState.hiScore = newState.score;
       if (typeof window !== "undefined") {
-        localStorage.setItem("battle-city-hi-score", String(newState.score));
+        try {
+          localStorage.setItem("battle-city-hi-score", String(newState.score));
+        } catch {
+          // A blocked storage write should not interrupt the result screen.
+        }
       }
     }
   }
@@ -733,6 +773,7 @@ export const applyPowerUp = (state: GameState): GameState => {
       return {
         ...state,
         enemies: [],
+        enemyAIMap: {},
         powerUp: null,
         score: state.score + 500,
       };

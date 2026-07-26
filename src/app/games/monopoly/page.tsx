@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import Container from "@/components/common/Container";
 import {
   BOARD_ORIGIN,
@@ -14,6 +14,7 @@ import {
   confirmPrompt,
   createInitialState,
   formatMoney,
+  getPurchaseDecision,
   getTilePosition,
   purchaseProperty,
   restartGame,
@@ -501,46 +502,6 @@ function drawCenterHub(ctx: CanvasRenderingContext2D, state: GameState) {
   ctx.font = "800 11px Inter, system-ui, sans-serif";
   ctx.fillText(`骰子合計 ${state.diceTotal || "?"}`, centerX, centerY + 114);
 
-  if (state.prompt) {
-    drawRoundRect(ctx, center + 28, center + 28, size - 56, size - 56, 22);
-    ctx.fillStyle = "rgba(2, 6, 23, 0.64)";
-    ctx.fill();
-
-    const cardFill = ctx.createLinearGradient(center + 48, center + 50, center + size - 48, center + size - 60);
-    cardFill.addColorStop(0, "rgba(15, 23, 42, 0.98)");
-    cardFill.addColorStop(1, "rgba(30, 41, 59, 0.98)");
-    fillRoundRect(ctx, center + 56, center + 66, size - 112, size - 132, 22, cardFill);
-    strokeRoundRect(ctx, center + 56, center + 66, size - 112, size - 132, 22, "rgba(255,255,255,0.16)", 1.5);
-
-    ctx.fillStyle = "#f8fafc";
-    ctx.font = "900 24px Inter, system-ui, sans-serif";
-    ctx.fillText(state.prompt.title, centerX, centerY - 48);
-    ctx.fillStyle = "rgba(226,232,240,0.82)";
-    ctx.font = "600 14px Inter, system-ui, sans-serif";
-    ctx.fillText(state.prompt.body, centerX, centerY - 18);
-
-    const promptTone = state.prompt.kind === "buy" ? "#22c55e" : state.prompt.kind === "game_over" ? "#f59e0b" : "#60a5fa";
-    drawRoundLabel(
-      ctx,
-      state.prompt.kind === "buy" ? "購買決策" : state.prompt.kind === "game_over" ? "遊戲結束" : "事件卡",
-      centerX - 62,
-      centerY + 8,
-      124,
-      "rgba(15,23,42,0.88)",
-      promptTone,
-      "#ffffff",
-    );
-
-    if (state.prompt.kind === "buy") {
-      drawRoundLabel(ctx, state.prompt.primaryLabel ?? "買下", centerX - 120, centerY + 64, 78, "rgba(34,197,94,0.92)", "rgba(255,255,255,0.12)", "#ffffff");
-      drawRoundLabel(ctx, state.prompt.secondaryLabel ?? "跳過", centerX + 46, centerY + 64, 78, "rgba(148,163,184,0.88)", "rgba(255,255,255,0.12)", "#ffffff");
-    } else if (state.prompt.kind === "game_over") {
-      drawRoundLabel(ctx, state.prompt.primaryLabel ?? "重新開始", centerX - 44, centerY + 64, 88, "rgba(245,158,11,0.94)", "rgba(255,255,255,0.12)", "#ffffff");
-    } else {
-      drawRoundLabel(ctx, "自動推進中", centerX - 44, centerY + 64, 88, "rgba(96,165,250,0.92)", "rgba(255,255,255,0.12)", "#ffffff");
-    }
-  }
-
   const currentPhase = state.phase === "prompt" ? state.prompt?.kind ?? "prompt" : state.phase;
   drawRoundLabel(
     ctx,
@@ -551,6 +512,86 @@ function drawCenterHub(ctx: CanvasRenderingContext2D, state: GameState) {
     "rgba(15,23,42,0.8)",
     "rgba(255,255,255,0.16)",
     "#e2e8f0",
+  );
+}
+
+function GameOverlay({
+  prompt,
+  decision,
+  isPaused,
+  primaryRef,
+  onBuy,
+  onSkip,
+  onConfirm,
+  onRestart,
+  onResume,
+}: {
+  prompt: GameState["prompt"];
+  decision: ReturnType<typeof getPurchaseDecision>;
+  isPaused: boolean;
+  primaryRef: RefObject<HTMLButtonElement | null>;
+  onBuy: () => void;
+  onSkip: () => void;
+  onConfirm: () => void;
+  onRestart: () => void;
+  onResume: () => void;
+}) {
+  if (!prompt && !isPaused) return null;
+
+  const title = isPaused ? "遊戲已暫停" : prompt?.title ?? "";
+  const body = isPaused ? "棋盤與事件計時都已停止，準備好後再繼續。" : prompt?.body ?? "";
+
+  return (
+    <div className="absolute inset-0 flex items-center justify-center rounded-[22px] bg-slate-950/64 p-4 backdrop-blur-[2px]">
+      <section
+        role="dialog"
+        aria-modal="false"
+        aria-labelledby="monopoly-prompt-title"
+        aria-describedby="monopoly-prompt-body"
+        className="w-full max-w-sm rounded-[24px] border border-white/14 bg-slate-950/95 p-5 text-center shadow-[0_24px_80px_rgba(2,6,23,0.72)]"
+      >
+        <p className="text-[10px] font-bold uppercase tracking-[0.34em] text-sky-200/74">
+          {isPaused ? "Break" : prompt?.kind === "buy" ? "Property decision" : prompt?.kind === "game_over" ? "Result" : "Event card"}
+        </p>
+        <h2 id="monopoly-prompt-title" className="mt-2 text-xl font-black text-white sm:text-2xl">
+          {title}
+        </h2>
+        <p id="monopoly-prompt-body" className="mt-2 text-sm leading-6 text-slate-200/80">
+          {body}
+        </p>
+        {!isPaused && prompt?.kind === "buy" && decision ? (
+          <div className="mt-4 grid grid-cols-3 gap-2" aria-label="購地試算">
+            <DecisionMetric label="買後現金" value={formatMoney(decision.cashAfter)} />
+            <DecisionMetric label="單次租金" value={formatMoney(decision.rent)} />
+            <DecisionMetric label="租金率" value={`${decision.yieldPercent}%`} />
+          </div>
+        ) : null}
+        <div className="mt-5 flex flex-wrap justify-center gap-3">
+          {isPaused ? (
+            <button type="button" onClick={onResume} className="min-h-12 rounded-2xl bg-violet-500 px-5 py-3 font-black text-white transition hover:bg-violet-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+              繼續遊戲
+            </button>
+          ) : prompt?.kind === "buy" ? (
+            <>
+              <button ref={primaryRef} type="button" onClick={onBuy} className="min-h-12 rounded-2xl bg-emerald-500 px-5 py-3 font-black text-white transition hover:bg-emerald-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+                {prompt.primaryLabel ?? "買下"}
+              </button>
+              <button type="button" onClick={onSkip} className="min-h-12 rounded-2xl bg-slate-700 px-5 py-3 font-black text-white transition hover:bg-slate-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+                {prompt.secondaryLabel ?? "跳過"}
+              </button>
+            </>
+          ) : prompt?.kind === "game_over" ? (
+            <button ref={primaryRef} type="button" onClick={onRestart} className="min-h-12 rounded-2xl bg-amber-500 px-5 py-3 font-black text-slate-950 transition hover:bg-amber-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+              {prompt.primaryLabel ?? "重新開始"}
+            </button>
+          ) : (
+            <button type="button" onClick={onConfirm} className="min-h-12 rounded-2xl bg-sky-500 px-5 py-3 font-black text-white transition hover:bg-sky-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+              繼續
+            </button>
+          )}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -593,12 +634,21 @@ function drawTokens(ctx: CanvasRenderingContext2D, state: GameState) {
 }
 
 function drawCanvas(state: GameState, canvas: HTMLCanvasElement) {
+  const pixelRatio = Math.min(2, window.devicePixelRatio || 1);
+  const targetWidth = Math.round(CANVAS_WIDTH * pixelRatio);
+  const targetHeight = Math.round(CANVAS_HEIGHT * pixelRatio);
+  if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+  }
+
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
   ctx.save();
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  drawBackground(ctx, state, canvas.width, canvas.height);
+  ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  drawBackground(ctx, state, CANVAS_WIDTH, CANVAS_HEIGHT);
   drawBoardFrame(ctx);
 
   state.board.forEach((tile) => drawTile(ctx, tile, state));
@@ -635,9 +685,12 @@ function makeStateSummary(state: GameState) {
 export default function MonopolyGame() {
   const [gameState, setGameState] = useState<GameState>(() => createInitialState());
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
+  const promptPrimaryRef = useRef<HTMLButtonElement>(null);
   const stateRef = useRef(gameState);
+  const pausedRef = useRef(isPaused);
   const rafRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -649,9 +702,21 @@ export default function MonopolyGame() {
     setGameState(next);
   }, []);
 
+  const setPaused = useCallback((paused: boolean) => {
+    pausedRef.current = paused;
+    setIsPaused(paused);
+  }, []);
+
+  const togglePause = useCallback(() => {
+    if (stateRef.current.mode === "game_over") return;
+    setPaused(!pausedRef.current);
+  }, [setPaused]);
+
   const runAction = useCallback((action: "roll" | "buy" | "skip" | "confirm" | "restart") => {
     const current = stateRef.current;
     let next = current;
+
+    if (action !== "restart" && pausedRef.current) return;
 
     switch (action) {
       case "roll":
@@ -667,12 +732,13 @@ export default function MonopolyGame() {
         next = confirmPrompt(current);
         break;
       case "restart":
+        setPaused(false);
         next = restartGame();
         break;
     }
 
     syncState(next);
-  }, [syncState]);
+  }, [setPaused, syncState]);
 
   const toggleFullscreen = useCallback(async () => {
     if (document.fullscreenElement) {
@@ -684,6 +750,9 @@ export default function MonopolyGame() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+        return;
+      }
       const key = event.key.toLowerCase();
       if (key === "f") {
         event.preventDefault();
@@ -710,6 +779,11 @@ export default function MonopolyGame() {
         runAction("restart");
         return;
       }
+      if (key === "p") {
+        event.preventDefault();
+        togglePause();
+        return;
+      }
       if (key === "enter") {
         event.preventDefault();
         runAction("confirm");
@@ -724,11 +798,12 @@ export default function MonopolyGame() {
       window.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("fullscreenchange", onFullscreenChange);
     };
-  }, [runAction, toggleFullscreen]);
+  }, [runAction, toggleFullscreen, togglePause]);
 
   useEffect(() => {
     window.render_game_to_text = () => renderGameToText(stateRef.current);
     window.advanceTime = (ms: number) => {
+      if (pausedRef.current) return;
       const steps = Math.max(1, Math.round(ms / FRAME_MS));
       let next = stateRef.current;
       for (let index = 0; index < steps; index += 1) {
@@ -736,13 +811,19 @@ export default function MonopolyGame() {
       }
       syncState(next);
     };
+    return () => {
+      delete window.render_game_to_text;
+      delete window.advanceTime;
+    };
   }, [syncState]);
 
   useEffect(() => {
     const loop = () => {
-      const next = tickGame(stateRef.current, FRAME_MS);
-      if (next !== stateRef.current) {
-        syncState(next);
+      if (!pausedRef.current) {
+        const next = tickGame(stateRef.current, FRAME_MS);
+        if (next !== stateRef.current) {
+          syncState(next);
+        }
       }
       rafRef.current = window.requestAnimationFrame(loop);
     };
@@ -761,10 +842,17 @@ export default function MonopolyGame() {
     drawCanvas(gameState, canvas);
   }, [gameState]);
 
+  useEffect(() => {
+    if (gameState.prompt?.kind === "buy" || gameState.prompt?.kind === "game_over") {
+      promptPrimaryRef.current?.focus();
+    }
+  }, [gameState.prompt?.kind, gameState.prompt?.tileId]);
+
   const summary = useMemo(() => makeStateSummary(gameState), [gameState]);
   const currentPlayer = summary.currentPlayer;
   const currentTile = currentPlayer ? gameState.board[currentPlayer.position] : null;
   const lastEvents = [...gameState.events].slice(-3).reverse();
+  const purchaseDecision = getPurchaseDecision(gameState);
 
   return (
     <Container size="full" className="min-h-screen py-6">
@@ -790,7 +878,8 @@ export default function MonopolyGame() {
               label="擲骰"
               hint="D / Space"
               tone="sky"
-              active={gameState.phase === "ready"}
+              active={gameState.phase === "ready" && !isPaused}
+              disabled={gameState.phase !== "ready" || isPaused}
               onClick={() => runAction("roll")}
             />
             <ActionChip
@@ -798,6 +887,7 @@ export default function MonopolyGame() {
               hint="B"
               tone="emerald"
               active={gameState.prompt?.kind === "buy"}
+              disabled={gameState.prompt?.kind !== "buy" || isPaused}
               onClick={() => runAction("buy")}
             />
             <ActionChip
@@ -805,13 +895,23 @@ export default function MonopolyGame() {
               hint="N"
               tone="slate"
               active={gameState.prompt?.kind === "buy"}
+              disabled={gameState.prompt?.kind !== "buy" || isPaused}
               onClick={() => runAction("skip")}
+            />
+            <ActionChip
+              label={isPaused ? "繼續" : "暫停"}
+              hint="P"
+              tone="violet"
+              active={isPaused}
+              disabled={gameState.mode === "game_over"}
+              onClick={togglePause}
             />
             <ActionChip
               label={isFullscreen ? "退出全螢幕" : "全螢幕"}
               hint="F / Esc"
               tone="amber"
               active={isFullscreen}
+              disabled={false}
               onClick={() => void toggleFullscreen()}
             />
             <ActionChip
@@ -819,19 +919,35 @@ export default function MonopolyGame() {
               hint="R"
               tone="rose"
               active={false}
+              disabled={false}
               onClick={() => runAction("restart")}
             />
           </div>
         </div>
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_284px]">
-          <div className="rounded-[28px] border border-white/10 bg-black/20 p-3 shadow-[0_18px_60px_rgba(15,23,42,0.35)]">
-            <canvas
-              ref={canvasRef}
-              width={CANVAS_WIDTH}
-              height={CANVAS_HEIGHT}
-              className="h-auto w-full rounded-[22px] border border-white/6 bg-slate-950 shadow-[0_20px_70px_rgba(2,6,23,0.5)]"
-            />
+          <div className="flex items-start justify-center rounded-[28px] border border-white/10 bg-black/20 p-3 shadow-[0_18px_60px_rgba(15,23,42,0.35)]">
+            <div className="relative aspect-square w-full max-w-[800px] xl:max-w-[calc(100dvh-320px)]">
+              <canvas
+                ref={canvasRef}
+                width={CANVAS_WIDTH}
+                height={CANVAS_HEIGHT}
+                role="img"
+                aria-label={`${currentPlayer?.name ?? "玩家"}的回合，位於${currentTile?.name ?? "未知地點"}，現金${currentPlayer ? formatMoney(currentPlayer.money) : "$0"}。${gameState.message}`}
+                className="h-full w-full rounded-[22px] border border-white/6 bg-slate-950 shadow-[0_20px_70px_rgba(2,6,23,0.5)]"
+              />
+              <GameOverlay
+                prompt={gameState.prompt}
+                decision={purchaseDecision}
+                isPaused={isPaused}
+                primaryRef={promptPrimaryRef}
+                onBuy={() => runAction("buy")}
+                onSkip={() => runAction("skip")}
+                onConfirm={() => runAction("confirm")}
+                onRestart={() => runAction("restart")}
+                onResume={togglePause}
+              />
+            </div>
           </div>
 
           <div className="flex flex-col gap-3">
@@ -864,12 +980,15 @@ export default function MonopolyGame() {
             <div className="rounded-[22px] border border-white/10 bg-white/7 p-3 shadow-[0_18px_50px_rgba(15,23,42,0.28)] backdrop-blur">
               <p className="text-[10px] uppercase tracking-[0.34em] text-sky-200/70">Players</p>
               <div className="mt-2 space-y-2">
-                {gameState.players.map((player) => (
-                  <div
-                    key={player.id}
-                    className="rounded-2xl border border-white/8 bg-slate-950/50 px-3 py-2.5"
-                    style={{ boxShadow: `inset 0 0 0 1px ${player.color}22` }}
-                  >
+                {gameState.players.map((player) => {
+                  const portfolio = gameState.board.filter((tile) => tile.owner === player.id);
+                  const totalRent = portfolio.reduce((sum, tile) => sum + (tile.rent ?? 0), 0);
+                  return (
+                    <div
+                      key={player.id}
+                      className="rounded-2xl border border-white/8 bg-slate-950/50 px-3 py-2.5"
+                      style={{ boxShadow: `inset 0 0 0 1px ${player.color}22` }}
+                    >
                     <div className="flex items-center gap-2.5">
                       <span
                         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-black text-white"
@@ -887,12 +1006,31 @@ export default function MonopolyGame() {
                           </span>
                         </div>
                         <p className="mt-0.5 text-xs text-slate-300/72">
-                          {player.position === 0 ? "起點" : `P${player.position}`} · {formatMoney(player.money)} · {player.properties.length} 地產
+                          {gameState.board[player.position]?.name ?? `P${player.position}`} · {formatMoney(player.money)} · 租金池 {formatMoney(totalRent)}
                         </p>
                       </div>
                     </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {portfolio.length ? portfolio.slice(0, 3).map((tile) => (
+                        <span
+                          key={tile.id}
+                          className="rounded-full border px-2 py-1 text-[10px] font-bold text-slate-100"
+                          style={{ borderColor: `${tile.accent ?? player.color}66`, background: `${tile.accent ?? player.color}1f` }}
+                        >
+                          {tile.name} · {formatMoney(tile.rent ?? 0)}
+                        </span>
+                      )) : (
+                        <span className="text-[10px] text-slate-400">尚未持有地產</span>
+                      )}
+                      {portfolio.length > 3 ? (
+                        <span className="rounded-full border border-white/10 px-2 py-1 text-[10px] font-bold text-slate-300">
+                          +{portfolio.length - 3}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -928,6 +1066,7 @@ export default function MonopolyGame() {
                 <KeyCap label="B" value="Buy" />
                 <KeyCap label="N" value="Skip" />
                 <KeyCap label="Enter" value="OK" />
+                <KeyCap label="P" value="Pause" />
                 <KeyCap label="F" value="Fullscreen" />
                 <KeyCap label="R" value="Restart" />
               </div>
@@ -944,18 +1083,21 @@ function ActionChip({
   hint,
   tone,
   active,
+  disabled,
   onClick,
 }: {
   label: string;
   hint: string;
-  tone: "sky" | "emerald" | "slate" | "amber" | "rose";
+  tone: "sky" | "emerald" | "slate" | "violet" | "amber" | "rose";
   active: boolean;
+  disabled: boolean;
   onClick: () => void;
 }) {
   const tones = {
     sky: "from-sky-400/90 to-cyan-500/90",
     emerald: "from-emerald-400/90 to-emerald-600/90",
     slate: "from-slate-500/90 to-slate-700/90",
+    violet: "from-violet-400/90 to-violet-600/90",
     amber: "from-amber-300/90 to-amber-500/90",
     rose: "from-rose-400/90 to-rose-600/90",
   } as const;
@@ -964,7 +1106,9 @@ function ActionChip({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-2xl border border-white/10 bg-gradient-to-br ${tones[tone]} px-4 py-3 text-left shadow-[0_12px_36px_rgba(15,23,42,0.28)] transition-transform duration-200 hover:-translate-y-0.5 hover:scale-[1.01] ${active ? "ring-2 ring-white/70" : ""}`}
+      disabled={disabled}
+      aria-pressed={tone === "violet" ? active : undefined}
+      className={`min-h-12 rounded-2xl border border-white/10 bg-gradient-to-br ${tones[tone]} px-4 py-3 text-left shadow-[0_12px_36px_rgba(15,23,42,0.28)] transition duration-200 enabled:hover:-translate-y-0.5 enabled:hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-38 ${active ? "ring-2 ring-white/70" : ""}`}
     >
       <div className="text-sm font-black text-white">{label}</div>
       <div className="mt-1 text-[11px] font-bold uppercase tracking-[0.22em] text-white/80">{hint}</div>
@@ -979,6 +1123,15 @@ function MetricCard({ label, value, compact = false }: { label: string; value: s
         {label}
       </p>
       <p className={`${compact ? "mt-0.5 text-base" : "mt-1 text-lg"} font-black text-white`}>{value}</p>
+    </div>
+  );
+}
+
+function DecisionMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/6 px-2 py-2">
+      <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+      <p className="mt-1 text-sm font-black text-white">{value}</p>
     </div>
   );
 }

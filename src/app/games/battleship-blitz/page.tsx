@@ -7,7 +7,10 @@ import {
   CANVAS_WIDTH,
   GameState,
   createInitialState,
+  getMissionTelemetry,
+  renderGameStateText,
   restartGame,
+  sanitizeBestScore,
   startGame,
   togglePause,
   updateGameState,
@@ -21,6 +24,7 @@ declare global {
 }
 
 const FRAME_MS = 1000 / 60;
+const BEST_SCORE_KEY = "battleship_blitz_best_score_v1";
 
 export default function BattleshipBlitzPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -35,8 +39,35 @@ export default function BattleshipBlitzPage() {
     touchX: undefined as number | undefined,
     touchY: undefined as number | undefined,
   });
-  const [gameState, setGameState] = useState<GameState>(gameStateRef.current);
+  const [gameState, setGameState] = useState<GameState>(createInitialState);
+  const [bestScore, setBestScore] = useState(0);
+  const bestScoreRef = useRef(0);
   const frameCountRef = useRef(0);
+  const drawGameplayRef = useRef<(ctx: CanvasRenderingContext2D, state: GameState) => void>(() => undefined);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      try {
+        const stored = sanitizeBestScore(Number(window.localStorage.getItem(BEST_SCORE_KEY)));
+        bestScoreRef.current = stored;
+        setBestScore(stored);
+      } catch {
+        // The game remains fully playable when storage is unavailable.
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  const updateBestScore = useCallback((score: number) => {
+    if (score <= bestScoreRef.current) return;
+    bestScoreRef.current = score;
+    setBestScore(score);
+    try {
+      window.localStorage.setItem(BEST_SCORE_KEY, String(score));
+    } catch {
+      // Ignore storage failures; the in-session record still updates.
+    }
+  }, []);
 
   // Render game to canvas
   const renderGame = useCallback(() => {
@@ -47,6 +78,7 @@ export default function BattleshipBlitzPage() {
     if (!ctx) return;
 
     const state = gameStateRef.current;
+    updateBestScore(state.score);
 
     // Clear canvas with dark background
     ctx.fillStyle = "#0f0f18";
@@ -85,7 +117,7 @@ export default function BattleshipBlitzPage() {
       ctx.fillText(Math.floor(Date.now() / 500) % 2 === 0 ? "PRESS SPACE TO START" : "", CANVAS_WIDTH / 2, CANVAS_HEIGHT * 0.75);
     } else if (state.mode === "paused") {
       // Draw game state dimmed
-      drawGameplay(ctx, state);
+      drawGameplayRef.current(ctx, state);
 
       // Draw pause overlay
       ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
@@ -101,7 +133,7 @@ export default function BattleshipBlitzPage() {
       ctx.fillText("Press P to resume", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 40);
     } else if (state.mode === "gameOver") {
       // Draw game state dimmed
-      drawGameplay(ctx, state);
+      drawGameplayRef.current(ctx, state);
 
       // Draw game over overlay
       ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
@@ -122,14 +154,17 @@ export default function BattleshipBlitzPage() {
       ctx.fillText("Press SPACE to restart", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 90);
     } else {
       // Gameplay
-      drawGameplay(ctx, state);
+      drawGameplayRef.current(ctx, state);
     }
 
-    // Update UI state
-    setGameState({ ...state });
-  }, []);
+    // Keep the HTML HUD responsive without forcing React to render at 60 fps.
+    frameCountRef.current += 1;
+    if (frameCountRef.current % 6 === 0) {
+      setGameState({ ...state, player: { ...state.player } });
+    }
+  }, [updateBestScore]);
 
-  const drawGameplay = (ctx: CanvasRenderingContext2D, state: GameState) => {
+  function drawGameplay(ctx: CanvasRenderingContext2D, state: GameState) {
     // Utility for glowing rects
     const fillGlowRect = (x: number, y: number, w: number, h: number, color: string, blur: number = 10) => {
       ctx.shadowBlur = blur;
@@ -175,15 +210,16 @@ export default function BattleshipBlitzPage() {
     ctx.fill();
     
     // Engine flames (3 flames)
-    if (state.mode === 'playing' && Math.random() > 0.3) {
-      const drawFlame = (xOff: number, size: number) => {
+    if (state.mode === 'playing') {
+      const drawFlame = (xOff: number, size: number, phase: number) => {
+        const flicker = 0.75 + (Math.sin(state.time * 35 + phase) + 1) * 0.25;
         ctx.fillStyle = "#ff5500";
         ctx.shadowBlur = 10;
         ctx.shadowColor = "#ff0000";
         ctx.beginPath();
         ctx.moveTo(xOff - size, state.player.height * 0.3);
         ctx.lineTo(xOff + size, state.player.height * 0.3);
-        ctx.lineTo(xOff, state.player.height * 0.5 + Math.random() * 15 * size);
+        ctx.lineTo(xOff, state.player.height * 0.5 + 8 * size * flicker);
         ctx.closePath();
         ctx.fill();
         
@@ -191,14 +227,14 @@ export default function BattleshipBlitzPage() {
         ctx.beginPath();
         ctx.moveTo(xOff - size*0.5, state.player.height * 0.3);
         ctx.lineTo(xOff + size*0.5, state.player.height * 0.3);
-        ctx.lineTo(xOff, state.player.height * 0.4 + Math.random() * 8 * size);
+        ctx.lineTo(xOff, state.player.height * 0.4 + 4 * size * flicker);
         ctx.closePath();
         ctx.fill();
       };
       
-      drawFlame(0, 3); // Main
-      drawFlame(-state.player.width * 0.3, 1.5); // Left
-      drawFlame(state.player.width * 0.3, 1.5); // Right
+      drawFlame(0, 3, 0); // Main
+      drawFlame(-state.player.width * 0.3, 1.5, 1); // Left
+      drawFlame(state.player.width * 0.3, 1.5, 2); // Right
     }
     ctx.restore();
     ctx.globalAlpha = 1;
@@ -390,11 +426,11 @@ export default function BattleshipBlitzPage() {
       else if (powerUp.type === "weapon_laser") { color = "#44aaff"; text = "L"; }
       else if (powerUp.type === "weapon_spread") { color = "#00ff44"; text = "S"; }
       
-      const pulse = 10 + Math.sin(Date.now() / 150) * 8;
+      const pulse = 10 + Math.sin(state.time * 7) * 8;
       
       ctx.save();
       ctx.translate(powerUp.x + powerUp.width / 2, powerUp.y + powerUp.height / 2);
-      ctx.rotate(Date.now() / 300); // Rotating pick-up
+      ctx.rotate(state.time * 2); // Rotating pick-up
       ctx.shadowBlur = pulse;
       ctx.shadowColor = color;
       ctx.strokeStyle = color;
@@ -414,7 +450,7 @@ export default function BattleshipBlitzPage() {
       ctx.textBaseline = "middle";
       ctx.shadowBlur = 0;
       // Undo rotation for the text
-      ctx.rotate(-Date.now() / 300);
+      ctx.rotate(-state.time * 2);
       ctx.fillText(text, 0, 1);
       ctx.restore();
     });
@@ -455,7 +491,11 @@ export default function BattleshipBlitzPage() {
       ctx.fillText(`COMBO x${state.combo}`, CANVAS_WIDTH - 15, 30);
       ctx.shadowBlur = 0;
     }
-  };
+  }
+
+  useEffect(() => {
+    drawGameplayRef.current = drawGameplay;
+  });
 
   // Game loop
   useEffect(() => {
@@ -476,6 +516,11 @@ export default function BattleshipBlitzPage() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
+      const target = e.target as HTMLElement | null;
+
+      if (target?.closest("button, a, input, textarea, select")) {
+        return;
+      }
       
       // Prevent default browser scrolling for game controls
       if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(key)) {
@@ -496,14 +541,16 @@ export default function BattleshipBlitzPage() {
           gameStateRef.current.mode === "menu" &&
           gameStateRef.current.player.shootCooldown <= 0
         ) {
-          gameStateRef.current = startGame(gameStateRef.current);
+          gameStateRef.current = startGame();
         } else if (gameStateRef.current.mode === "gameOver") {
-          gameStateRef.current = restartGame(gameStateRef.current);
+          gameStateRef.current = restartGame();
         } else if (gameStateRef.current.mode === "playing") {
           inputStateRef.current.shoot = true;
         }
       } else if (key === "p") {
-        gameStateRef.current = togglePause(gameStateRef.current);
+        if (!e.repeat) {
+          gameStateRef.current = togglePause(gameStateRef.current);
+        }
       }
     };
 
@@ -557,9 +604,9 @@ export default function BattleshipBlitzPage() {
       if (
         gameStateRef.current.mode === "menu"
       ) {
-        gameStateRef.current = startGame(gameStateRef.current);
+        gameStateRef.current = startGame();
       } else if (gameStateRef.current.mode === "gameOver") {
-        gameStateRef.current = restartGame(gameStateRef.current);
+        gameStateRef.current = restartGame();
       }
     };
 
@@ -583,23 +630,7 @@ export default function BattleshipBlitzPage() {
   // Expose game state for testing
   useEffect(() => {
     window.render_game_to_text = () => {
-      const state = gameStateRef.current;
-      return JSON.stringify({
-        mode: state.mode,
-        score: state.score,
-        wave: state.wave,
-        lives: state.lives,
-        player: {
-          x: Math.round(state.player.x),
-          y: Math.round(state.player.y),
-          health: state.player.health,
-          weaponLevel: state.player.weaponLevel,
-        },
-        enemies: state.enemies.length,
-        bullets: state.playerBullets.length,
-        enemyBullets: state.enemyBullets.length,
-        combo: state.combo,
-      });
+      return renderGameStateText(gameStateRef.current, bestScoreRef.current);
     };
 
     window.advanceTime = (ms: number) => {
@@ -614,92 +645,288 @@ export default function BattleshipBlitzPage() {
       }
       renderGame();
     };
+    return () => {
+      delete window.render_game_to_text;
+      delete window.advanceTime;
+    };
   }, [renderGame]);
 
+  const handlePrimaryAction = () => {
+    const state = gameStateRef.current;
+    if (state.mode === "menu") {
+      gameStateRef.current = startGame();
+    } else if (state.mode === "gameOver") {
+      gameStateRef.current = restartGame();
+    } else {
+      gameStateRef.current = togglePause(state);
+    }
+    setGameState({ ...gameStateRef.current, player: { ...gameStateRef.current.player } });
+    requestAnimationFrame(() => canvasRef.current?.focus());
+  };
+
+  const setInput = (
+    key: "left" | "right" | "up" | "down" | "shoot",
+    pressed: boolean,
+  ) => {
+    inputStateRef.current[key] = pressed;
+  };
+
+  const fireOnce = () => {
+    if (gameStateRef.current.mode !== "playing") return;
+    gameStateRef.current = updateGameState(
+      gameStateRef.current,
+      { ...inputStateRef.current, shoot: true },
+      0,
+    );
+    renderGame();
+  };
+
+  const modeLabel = {
+    menu: "Ready",
+    playing: "In flight",
+    paused: "Paused",
+    gameOver: "Run ended",
+  }[gameState.mode];
+  const primaryActionLabel = gameState.mode === "menu"
+    ? "Start sortie"
+    : gameState.mode === "gameOver"
+      ? "Try again"
+      : gameState.mode === "paused"
+        ? "Resume"
+        : "Pause";
+  const telemetry = getMissionTelemetry(gameState);
+  const threatTone = {
+    Clear: "border-emerald-400/40 bg-emerald-400/10 text-emerald-200",
+    Engaged: "border-amber-400/40 bg-amber-400/10 text-amber-200",
+    Critical: "border-rose-400/50 bg-rose-400/15 text-rose-100",
+    Boss: "border-fuchsia-400/60 bg-fuchsia-400/15 text-fuchsia-100",
+  }[telemetry.threat];
+  const weaponShort = `${gameState.player.weaponType.slice(0, 3).toUpperCase()} ${gameState.player.weaponLevel}`;
+
   return (
-    <Container>
-      <div className="flex flex-col items-center min-h-[calc(100vh-80px)] py-8 font-mono bg-grid-cyan-900/[0.04]">
-        <div className="mb-6 text-center">
-          <h1 className="text-4xl md:text-5xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500" style={{ filter: "drop-shadow(0px 0px 10px rgba(34,211,238,0.5))" }}>
-            BATTLESHIP BLITZ
-          </h1>
-          <p className="text-cyan-300/80 text-sm tracking-[0.3em] mt-3 uppercase font-semibold">Retro Arcade Shooter</p>
-        </div>
-
-        <div className="relative group w-full max-w-[800px] px-2 md:px-0">
-          <div className="absolute -inset-1 bg-gradient-to-b from-cyan-500 to-purple-600 rounded-2xl blur-md opacity-40 group-hover:opacity-60 transition duration-1000"></div>
-          <div className="relative bg-[#0f0f18] rounded-xl border border-cyan-500/40 overflow-hidden shadow-2xl p-1 md:p-2 flex justify-center">
-            <canvas
-              ref={canvasRef}
-              width={CANVAS_WIDTH}
-              height={CANVAS_HEIGHT}
-              className="w-full aspect-[4/5] bg-[#0a0a14] rounded shadow-inner"
-              style={{
-                imageRendering: "pixelated",
-                maxHeight: "70vh"
-              }}
-            />
-          </div>
-        </div>
-
-        <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-[800px] px-4">
-          <div className="bg-[#111118]/80 backdrop-blur-md border border-cyan-900/50 rounded-xl p-6 shadow-xl transform transition hover:-translate-y-1 hover:border-cyan-500/50">
-            <h2 className="text-cyan-400 text-sm font-bold tracking-widest mb-5 flex items-center gap-3">
-              <span className="i-ph-game-controller text-xl" />
-              CONTROLS
-            </h2>
-            <ul className="space-y-4 text-cyan-100/80 text-sm">
-              <li className="flex items-center gap-3">
-                <div className="grid grid-cols-3 gap-1">
-                  <div/>
-                  <span className="bg-cyan-950/80 border border-cyan-800 rounded px-2 py-1 text-xs text-center">W/↑</span>
-                  <div/>
-                  <span className="bg-cyan-950/80 border border-cyan-800 rounded px-2 py-1 text-xs text-center">A/←</span>
-                  <span className="bg-cyan-950/80 border border-cyan-800 rounded px-2 py-1 text-xs text-center">S/↓</span>
-                  <span className="bg-cyan-950/80 border border-cyan-800 rounded px-2 py-1 text-xs text-center">D/→</span>
-                </div>
-                <span className="ml-2 font-medium">Move Ship</span>
-              </li>
-              <li className="flex items-center gap-3">
-                <span className="bg-cyan-950/80 border border-cyan-800 rounded px-3 py-1.5 text-xs text-center font-bold tracking-widest">SPACE</span>
-                <span className="font-medium">Shoot Weapons</span>
-              </li>
-              <li className="flex items-center gap-3">
-                <span className="bg-cyan-950/80 border border-cyan-800 rounded px-3 py-1.5 text-xs font-bold">P</span>
-                <span className="font-medium">Pause Game</span>
-              </li>
-              <li className="flex items-center gap-3 pt-4 border-t border-cyan-900/50 mt-4 text-xs font-semibold text-cyan-300">
-                <span className="i-ph-device-mobile-camera text-2xl" />
-                <span>Touch & drag anywhere to move and shoot</span>
-              </li>
-            </ul>
-          </div>
-
-          <div className="bg-[#111118]/80 backdrop-blur-md border border-fuchsia-900/50 rounded-xl p-6 shadow-xl transform transition hover:-translate-y-1 hover:border-fuchsia-500/50">
-            <h2 className="text-fuchsia-400 text-sm font-bold tracking-widest mb-5 flex items-center gap-3">
-              <span className="i-ph-radar text-xl" />
-              RADAR LEGEND
-            </h2>
-            <div className="grid grid-cols-2 gap-x-2 gap-y-4 text-sm text-gray-300">
-              <div className="space-y-4">
-                <p className="flex items-center gap-3 font-medium"><span className="w-4 h-4 rounded-sm bg-red-500" style={{ boxShadow: "0 0 10px rgba(239,68,68,0.8)" }} /> Interceptor</p>
-                <p className="flex items-center gap-3 font-medium"><span className="w-4 h-4 rounded-sm bg-fuchsia-500" style={{ boxShadow: "0 0 10px rgba(217,70,239,0.8)" }} /> Stalker</p>
-                <p className="flex items-center gap-3 font-medium"><span className="w-4 h-4 rounded-sm bg-[#ffaa00]" style={{ boxShadow: "0 0 10px rgba(255,170,0,0.8)" }} /> Dreadnought</p>
-                <p className="flex items-center gap-3 font-bold text-red-400 mt-2"><span className="w-4 h-4 rounded-full bg-[#ff3300] animate-pulse" style={{ boxShadow: "0 0 15px rgba(255,51,0,1)" }} /> ALIEN BOSS</p>
-              </div>
-              <div className="space-y-4 border-l border-white/10 pl-4">
-                <p className="flex items-center gap-3 font-medium"><span className="w-4 h-4 rounded-full bg-green-400 animate-pulse border border-green-200" style={{ boxShadow: "0 0 12px rgba(74,222,128,0.8)" }} /> Repair (H)</p>
-                <p className="flex items-center gap-3 font-medium"><span className="w-4 h-4 rounded-full bg-fuchsia-400 animate-pulse border border-fuchsia-200" style={{ boxShadow: "0 0 12px rgba(232,121,249,0.8)" }} /> Shield (S)</p>
-                <p className="flex items-center gap-3 font-medium"><span className="w-4 h-4 rounded-full bg-yellow-400 animate-pulse border border-yellow-200" style={{ boxShadow: "0 0 12px rgba(250,204,21,0.8)" }} /> Blaster (B)</p>
-                <p className="flex items-center gap-3 font-medium"><span className="w-4 h-4 rounded-full bg-blue-400 animate-pulse border border-blue-200" style={{ boxShadow: "0 0 12px rgba(96,165,250,0.8)" }} /> Laser (L)</p>
-                <p className="flex items-center gap-3 font-medium"><span className="w-4 h-4 rounded-full bg-orange-500 animate-pulse border border-orange-300" style={{ boxShadow: "0 0 12px rgba(249,115,22,0.8)" }} /> Missile (M)</p>
-                <p className="flex items-center gap-3 font-medium"><span className="w-4 h-4 rounded-full bg-emerald-400 animate-pulse border border-emerald-200" style={{ boxShadow: "0 0 12px rgba(52,211,153,0.8)" }} /> Spread (S)</p>
-                <p className="text-xs text-gray-400 mt-4 leading-relaxed">Collect power-ups to upgrade weapons to MAX LEVEL (5) and survive!</p>
-              </div>
+    <div
+      className="min-h-[calc(100vh-64px)] overflow-x-hidden bg-[#050914] font-mono text-slate-100"
+      style={{
+        backgroundImage: "radial-gradient(circle at 16% 2%, rgba(34,211,238,.14), transparent 28%), radial-gradient(circle at 92% 12%, rgba(217,70,239,.12), transparent 26%)",
+      }}
+    >
+      <Container size="lg">
+        <div className="py-3 sm:py-5">
+          <header className="mb-3 flex items-end justify-between gap-4">
+            <div className="min-w-0">
+              <p className="hidden text-[10px] font-black uppercase tracking-[0.28em] text-cyan-300 sm:block">Fleet defense // sortie 05</p>
+              <h1 className="whitespace-nowrap bg-gradient-to-r from-cyan-300 via-sky-400 to-fuchsia-400 bg-clip-text text-[clamp(1.55rem,6vw,3.25rem)] font-black leading-none tracking-[0.08em] text-transparent drop-shadow-[0_0_18px_rgba(34,211,238,.25)]">
+                BATTLESHIP BLITZ
+              </h1>
+              <p className="mt-2 hidden text-xs font-semibold tracking-[0.12em] text-slate-400 md:block">Break the formation. Protect the fleet. Survive every fifth-wave mothership.</p>
             </div>
+            <div className="hidden shrink-0 rounded-xl border border-cyan-400/25 bg-cyan-400/8 px-4 py-2 text-right sm:block">
+              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-500">Pilot rank</p>
+              <p className="mt-0.5 text-sm font-black text-cyan-200">{telemetry.rank}</p>
+            </div>
+          </header>
+
+          <section className="mb-3 grid grid-cols-5 gap-1.5 sm:gap-2" aria-label="Current mission status">
+            <MissionStat label="Status" value={modeLabel} />
+            <MissionStat label="Score" value={gameState.score.toLocaleString("en-US")} />
+            <MissionStat label="Wave" value={gameState.wave.toString()} />
+            <MissionStat label="Hull" value={`${gameState.player.health}% · ${gameState.lives}L`} />
+            <MissionStat label="Weapon" value={weaponShort} />
+          </section>
+
+          <div className="grid items-start gap-3 lg:grid-cols-[minmax(350px,420px)_minmax(0,1fr)]">
+            <section aria-label="Flight console">
+              <div className="mb-2 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handlePrimaryAction}
+                  className="min-h-12 rounded-xl bg-cyan-400 px-3 text-xs font-black uppercase tracking-[0.12em] text-slate-950 transition hover:bg-cyan-300 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-200"
+                >
+                  {primaryActionLabel}
+                </button>
+                <button
+                  type="button"
+                  disabled={gameState.mode !== "playing"}
+                  onClick={fireOnce}
+                  onPointerDown={() => setInput("shoot", true)}
+                  onPointerUp={() => setInput("shoot", false)}
+                  onPointerCancel={() => setInput("shoot", false)}
+                  onPointerLeave={() => setInput("shoot", false)}
+                  onKeyDown={(event) => {
+                    if (event.key === " " || event.key === "Enter") setInput("shoot", true);
+                  }}
+                  onKeyUp={(event) => {
+                    if (event.key === " " || event.key === "Enter") setInput("shoot", false);
+                  }}
+                  onBlur={() => setInput("shoot", false)}
+                  className="min-h-12 rounded-xl border border-fuchsia-400/60 bg-fuchsia-950/80 px-3 text-xs font-black uppercase tracking-[0.12em] text-fuchsia-100 transition hover:bg-fuchsia-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-fuchsia-300 disabled:cursor-not-allowed disabled:opacity-35"
+                >
+                  Hold to fire
+                </button>
+              </div>
+
+              <div className="relative mx-auto w-full max-w-[326px] sm:max-w-[380px] lg:max-w-[390px]">
+                <div className="absolute -inset-1 rounded-2xl bg-gradient-to-b from-cyan-500 to-fuchsia-600 opacity-45 blur-md" />
+                <div className="relative flex justify-center overflow-hidden rounded-xl border border-cyan-400/40 bg-[#0f0f18] p-1.5 shadow-2xl">
+                  <canvas
+                    ref={canvasRef}
+                    width={CANVAS_WIDTH}
+                    height={CANVAS_HEIGHT}
+                    tabIndex={0}
+                    role="img"
+                    aria-label={`Battleship Blitz game field. ${modeLabel}. Score ${gameState.score}, wave ${gameState.wave}, hull ${gameState.player.health} percent.`}
+                    className="block w-full rounded bg-[#0a0a14] shadow-inner outline-none focus-visible:ring-4 focus-visible:ring-cyan-400"
+                    style={{ imageRendering: "pixelated", height: "auto", touchAction: "none" }}
+                  >
+                    Battleship Blitz arcade game. Use the controls around the game field to play.
+                  </canvas>
+                </div>
+              </div>
+
+              <div className="mx-auto mt-2 grid w-full max-w-[326px] grid-cols-3 gap-1.5 sm:max-w-[380px] lg:hidden" aria-label="Touch movement controls">
+                <span />
+                <ControlButton label="Move up" glyph="↑" input="up" setInput={setInput} />
+                <span />
+                <ControlButton label="Move left" glyph="←" input="left" setInput={setInput} />
+                <ControlButton label="Move down" glyph="↓" input="down" setInput={setInput} />
+                <ControlButton label="Move right" glyph="→" input="right" setInput={setInput} />
+              </div>
+            </section>
+
+            <aside className="grid gap-3" aria-label="Mission intelligence">
+              <section className="rounded-2xl border border-cyan-400/20 bg-slate-950/70 p-4 shadow-xl">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-300">Mission cadence</p>
+                    <h2 className="mt-1 text-xl font-black text-white">Route to the mothership</h2>
+                  </div>
+                  <span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] ${threatTone}`}>
+                    {telemetry.threat}
+                  </span>
+                </div>
+
+                <div className="mt-4 grid grid-cols-5 gap-2" aria-label={`Wave ${telemetry.sectorStep} of 5 in the current sector`}>
+                  {Array.from({ length: 5 }, (_, index) => {
+                    const step = index + 1;
+                    const active = step <= telemetry.sectorStep;
+                    return (
+                      <div key={step} className="text-center">
+                        <div className={`h-2 rounded-full ${active ? (step === 5 ? "bg-fuchsia-400 shadow-[0_0_12px_rgba(232,121,249,.8)]" : "bg-cyan-400") : "bg-slate-800"}`} />
+                        <span className="mt-1.5 block text-[9px] font-black text-slate-500">{step === 5 ? "BOSS" : `W${step}`}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="mt-3 text-xs leading-relaxed text-slate-400">
+                  {telemetry.bossIn === 0
+                    ? "Mothership contact. Read the pattern and hold the center lane."
+                    : `${telemetry.bossIn} wave${telemetry.bossIn === 1 ? "" : "s"} until the next mothership contact.`}
+                </p>
+
+                <div className="mt-4 grid grid-cols-4 gap-2 border-t border-white/8 pt-4">
+                  <MissionMetric label="Rank" value={telemetry.rank} />
+                  <MissionMetric label="Best" value={bestScore.toLocaleString("en-US")} />
+                  <MissionMetric label="Combo" value={`×${gameState.combo}`} />
+                  <MissionMetric label="Hostiles" value={gameState.enemies.length.toString()} />
+                </div>
+              </section>
+
+              <section className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-cyan-400/15 bg-slate-950/60 p-4">
+                  <h2 className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-300">Flight controls</h2>
+                  <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-black uppercase text-slate-300">
+                    <span className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-2">WASD / Arrows · Move</span>
+                    <span className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-2">Space · Fire</span>
+                    <span className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-2">P · Pause</span>
+                  </div>
+                  <p className="mt-3 text-[11px] leading-relaxed text-slate-500">On touch screens, drag inside the field to steer and auto-fire, or use the directional pad.</p>
+                </div>
+
+                <div className="rounded-2xl border border-fuchsia-400/15 bg-slate-950/60 p-4">
+                  <h2 className="text-[10px] font-black uppercase tracking-[0.22em] text-fuchsia-300">Radar legend</h2>
+                  <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-[11px] font-bold text-slate-400">
+                    <RadarItem color="bg-red-500" label="Interceptor" />
+                    <RadarItem color="bg-fuchsia-500" label="Stalker" />
+                    <RadarItem color="bg-amber-400" label="Dreadnought" />
+                    <RadarItem color="bg-orange-500" label="Mothership" />
+                    <RadarItem color="bg-emerald-400" label="Repair / Spread" />
+                    <RadarItem color="bg-blue-400" label="Laser / Shield" />
+                  </div>
+                </div>
+              </section>
+            </aside>
           </div>
+
+          <p className="sr-only" aria-live="polite">
+            {modeLabel}. Score {gameState.score}. Wave {gameState.wave}. Hull {gameState.player.health} percent. {gameState.lives} lives remaining.
+          </p>
         </div>
-      </div>
-    </Container>
+      </Container>
+    </div>
+  );
+}
+
+function MissionStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-xl border border-cyan-300/15 bg-slate-950/65 px-2 py-2 shadow-lg sm:px-3">
+      <p className="truncate text-[8px] font-black uppercase tracking-[0.16em] text-slate-500 sm:text-[9px]">{label}</p>
+      <p className="mt-1 truncate text-[10px] font-black text-white sm:text-sm">{value}</p>
+    </div>
+  );
+}
+
+function MissionMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="truncate text-[8px] font-black uppercase tracking-[0.16em] text-slate-600">{label}</p>
+      <p className="mt-1 truncate text-xs font-black text-slate-200">{value}</p>
+    </div>
+  );
+}
+
+function RadarItem({ color, label }: { color: string; label: string }) {
+  return (
+    <p className="flex min-w-0 items-center gap-2">
+      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${color}`} aria-hidden="true" />
+      <span className="truncate">{label}</span>
+    </p>
+  );
+}
+
+function ControlButton({
+  label,
+  glyph,
+  input,
+  setInput,
+}: {
+  label: string;
+  glyph: string;
+  input: "left" | "right" | "up" | "down";
+  setInput: (input: "left" | "right" | "up" | "down" | "shoot", pressed: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onPointerDown={() => setInput(input, true)}
+      onPointerUp={() => setInput(input, false)}
+      onPointerCancel={() => setInput(input, false)}
+      onPointerLeave={() => setInput(input, false)}
+      onKeyDown={(event) => {
+        if (event.key === " " || event.key === "Enter") {
+          event.preventDefault();
+          setInput(input, true);
+        }
+      }}
+      onKeyUp={(event) => {
+        if (event.key === " " || event.key === "Enter") {
+          setInput(input, false);
+        }
+      }}
+      onBlur={() => setInput(input, false)}
+      className="min-h-12 rounded-lg border border-cyan-700 bg-cyan-950 text-xl font-black text-cyan-100 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-300"
+    >
+      {glyph}
+    </button>
   );
 }

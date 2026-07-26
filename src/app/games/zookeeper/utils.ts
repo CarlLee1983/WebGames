@@ -14,7 +14,8 @@ export const DEFAULT_SEED = 20260319;
 export type AnimalType = "lion" | "panda" | "frog" | "fox" | "elephant" | "hippo";
 export type BoardCell = AnimalType | null;
 export type Board = BoardCell[][];
-export type GameMode = "ready" | "playing";
+export type GameMode = "ready" | "playing" | "complete";
+export type SafariRank = "Gold" | "Silver" | "Bronze";
 
 export interface Point {
   row: number;
@@ -29,8 +30,12 @@ export interface GameState {
   targetReached: boolean;
   selectedPath: Point[];
   selectedAnimal: AnimalType | null;
+  hintPath: Point[];
   moves: number;
   reshuffles: number;
+  hintsUsed: number;
+  bestChain: number;
+  rank: SafariRank | null;
   validMoveCount: number;
   message: string | null;
   messageTimer: number;
@@ -42,6 +47,13 @@ export interface ResolveMoveResult {
   state: GameState;
   cleared: number;
   reshuffled: boolean;
+}
+
+export interface ChainPreview {
+  length: number;
+  points: number;
+  animalsNeeded: number;
+  isValid: boolean;
 }
 
 export const ANIMAL_STYLES: Record<
@@ -162,6 +174,43 @@ export function countValidMoves(board: Board): number {
   return count;
 }
 
+export function findHintPath(board: Board): Point[] {
+  const search = (point: Point, animal: AnimalType, path: Point[], seen: Set<string>): Point[] | null => {
+    const nextPath = [...path, point];
+    if (nextPath.length >= MIN_CHAIN_LENGTH) {
+      return nextPath;
+    }
+
+    const nextSeen = new Set(seen);
+    nextSeen.add(pointKey(point));
+    for (const neighbor of getNeighbors(point)) {
+      if (nextSeen.has(pointKey(neighbor)) || board[neighbor.row][neighbor.col] !== animal) {
+        continue;
+      }
+      const result = search(neighbor, animal, nextPath, nextSeen);
+      if (result) {
+        return result;
+      }
+    }
+    return null;
+  };
+
+  for (let row = 0; row < ROWS; row += 1) {
+    for (let col = 0; col < COLS; col += 1) {
+      const animal = board[row][col];
+      if (!animal) {
+        continue;
+      }
+      const result = search({ row, col }, animal, [], new Set());
+      if (result) {
+        return result;
+      }
+    }
+  }
+
+  return [];
+}
+
 export function isPathValid(board: Board, path: Point[]): boolean {
   if (path.length < MIN_CHAIN_LENGTH) {
     return false;
@@ -197,6 +246,27 @@ export function isPathValid(board: Board, path: Point[]): boolean {
 
 export function scoreChain(length: number): number {
   return length * length * 20 + Math.max(0, length - MIN_CHAIN_LENGTH) * 30;
+}
+
+export function getChainPreview(length: number): ChainPreview {
+  const safeLength = Math.max(0, Math.floor(length));
+  const isValid = safeLength >= MIN_CHAIN_LENGTH;
+  return {
+    length: safeLength,
+    points: isValid ? scoreChain(safeLength) : 0,
+    animalsNeeded: Math.max(0, MIN_CHAIN_LENGTH - safeLength),
+    isValid,
+  };
+}
+
+export function getSafariRank(moves: number, hintsUsed: number): SafariRank {
+  if (moves <= 4 && hintsUsed === 0) return "Gold";
+  if (moves <= 7 && hintsUsed <= 1) return "Silver";
+  return "Bronze";
+}
+
+export function getRankOutlook(moves: number, hintsUsed: number): SafariRank {
+  return getSafariRank(Math.max(0, moves) + 1, Math.max(0, hintsUsed));
 }
 
 export function applyGravity(board: Board, seed: number): { board: Board; seed: number } {
@@ -300,8 +370,12 @@ export function createInitialState(seed = DEFAULT_SEED): GameState {
     targetReached: false,
     selectedPath: [],
     selectedAnimal: null,
+    hintPath: [],
     moves: 0,
     reshuffles: 0,
+    hintsUsed: 0,
+    bestChain: 0,
+    rank: null,
     validMoveCount: 0,
     message: "Link 3+ matching animals to hit the target score.",
     messageTimer: 0,
@@ -311,13 +385,14 @@ export function createInitialState(seed = DEFAULT_SEED): GameState {
 }
 
 export function startGame(state: GameState): GameState {
-  if (state.mode === "playing") {
+  if (state.mode !== "ready") {
     return state;
   }
 
   return {
     ...state,
     mode: "playing",
+    hintPath: [],
     message: null,
     messageTimer: 0,
   };
@@ -335,6 +410,33 @@ export function clearSelection(state: GameState): GameState {
   };
 }
 
+export function requestHint(state: GameState): GameState {
+  if (state.mode !== "playing") {
+    return state;
+  }
+
+  if (isPathValid(state.board, state.hintPath)) {
+    return {
+      ...state,
+      message: "Hint already active — trace the glowing animals.",
+      messageTimer: 2400,
+    };
+  }
+
+  const hintPath = findHintPath(state.board);
+  if (hintPath.length < MIN_CHAIN_LENGTH) {
+    return state;
+  }
+
+  return {
+    ...state,
+    hintPath,
+    hintsUsed: state.hintsUsed + 1,
+    message: "Hint highlighted — trace the glowing animals.",
+    messageTimer: 2400,
+  };
+}
+
 export function beginSelection(state: GameState, point: Point): GameState {
   if (state.mode !== "playing") {
     return state;
@@ -344,6 +446,9 @@ export function beginSelection(state: GameState, point: Point): GameState {
     ...state,
     selectedPath: [point],
     selectedAnimal: state.board[point.row][point.col],
+    hintPath: [],
+    message: null,
+    messageTimer: 0,
   };
 }
 
@@ -406,23 +511,27 @@ export function resolveSelection(state: GameState): ResolveMoveResult {
   const cleared = state.selectedPath.length;
   const score = state.score + scoreChain(cleared);
   const targetReached = state.targetReached || score >= state.targetScore;
+  const moves = state.moves + 1;
 
   const nextState = withComputedMoves({
     ...state,
     board: playable.board,
     score,
-    mode: "playing",
+    mode: targetReached ? "complete" : "playing",
     targetReached,
     selectedPath: [],
     selectedAnimal: null,
-    moves: state.moves + 1,
+    hintPath: [],
+    moves,
     reshuffles: state.reshuffles + (playable.reshuffled ? 1 : 0),
+    bestChain: Math.max(state.bestChain, cleared),
+    rank: targetReached ? getSafariRank(moves, state.hintsUsed) : null,
     message: targetReached
-      ? null
+      ? `Safari complete with a ${getSafariRank(moves, state.hintsUsed)} rank!`
       : playable.reshuffled
         ? "Board reshuffled. Fresh links available."
         : `Cleared ${cleared} animals for ${scoreChain(cleared)} points.`,
-    messageTimer: targetReached ? 0 : 1100,
+    messageTimer: targetReached ? 0 : 1400,
     lastClearCount: cleared,
     seed: playable.seed,
   });

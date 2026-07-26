@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
+    "prebuild": "bun run build:babylon-runtime",
     "build": "next build",
+    "build:babylon-runtime": "bun build src/app/games/babylon-rpg/runtime.ts --target=browser --outfile=public/games/babylon-rpg/runtime.js --minify",
     "start": "next start",
     "lint": "eslint"
   },

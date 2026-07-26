@@ -10,6 +10,7 @@ export const PLAYER_WIDTH = 28;
 export const PLAYER_HEIGHT = 32;
 export const MAX_HP = 10;
 export const FRAME_MS = 1000 / 60;
+export const FEEDBACK_SECONDS = 1.6;
 
 // 型別定義
 export type GameMode = "ready" | "playing" | "paused" | "gameOver";
@@ -46,10 +47,34 @@ export interface GameState {
   scrollSpeed: number;
   highScore: number;
   nextPlatformId: number;
+  landings: number;
+  streak: number;
+  bestStreak: number;
+  feedback: string;
+  feedbackTimer: number;
+  lastMilestone: number;
+}
+
+export interface PaceProgress {
+  level: number;
+  label: string;
+  startFloor: number;
+  nextFloor: number | null;
+  floorsRemaining: number;
+  percent: number;
+  speed: number;
+}
+
+export interface LandingForecast {
+  platformId: number;
+  type: PlatformType;
+  direction: "left" | "right" | "hold";
+  verticalDistance: number;
+  horizontalGap: number;
 }
 
 // 根據樓層決定難度
-function getScrollSpeed(floor: number): number {
+export function getScrollSpeed(floor: number): number {
   if (floor < 10) return 60;
   if (floor < 30) return 80;
   if (floor < 50) return 100;
@@ -57,13 +82,89 @@ function getScrollSpeed(floor: number): number {
   return 150 + Math.min(100, (floor - 100));
 }
 
+export function getPaceProgress(floor: number): PaceProgress {
+  const safeFloor = Math.max(0, Math.floor(floor));
+  const bands = [
+    { start: 0, next: 10, label: "Warm-up" },
+    { start: 10, next: 30, label: "Quick steps" },
+    { start: 30, next: 50, label: "Fast shaft" },
+    { start: 50, next: 100, label: "Danger climb" },
+    { start: 100, next: 200, label: "Abyss rush" },
+    { start: 200, next: null, label: "Maximum velocity" },
+  ] as const;
+  let bandIndex = 0;
+  for (let index = 1; index < bands.length; index += 1) {
+    if (safeFloor >= bands[index].start) bandIndex = index;
+  }
+  const band = bands[bandIndex];
+  const floorsRemaining = band.next === null ? 0 : Math.max(0, band.next - safeFloor);
+  const percent = band.next === null
+    ? 100
+    : Math.min(100, ((safeFloor - band.start) / (band.next - band.start)) * 100);
+
+  return {
+    level: bandIndex + 1,
+    label: band.label,
+    startFloor: band.start,
+    nextFloor: band.next,
+    floorsRemaining,
+    percent,
+    speed: getScrollSpeed(safeFloor),
+  };
+}
+
+export function getLandingForecast(state: GameState): LandingForecast | null {
+  const playerBottom = state.player.y + PLAYER_HEIGHT;
+  const platform = state.platforms
+    .filter((candidate) => (
+      candidate.id !== state.player.groundedPlatformId
+      && candidate.y >= playerBottom - 2
+      && !(candidate.type === "fake" && candidate.state > 0.5)
+    ))
+    .sort((first, second) => first.y - second.y)[0];
+
+  if (!platform) return null;
+
+  const playerCenter = state.player.x + PLAYER_WIDTH / 2;
+  const safeLeft = platform.x + PLAYER_WIDTH * 0.3;
+  const safeRight = platform.x + platform.width - PLAYER_WIDTH * 0.3;
+  const direction = playerCenter < safeLeft
+    ? "right"
+    : playerCenter > safeRight
+      ? "left"
+      : "hold";
+  const horizontalGap = direction === "right"
+    ? safeLeft - playerCenter
+    : direction === "left"
+      ? playerCenter - safeRight
+      : 0;
+
+  return {
+    platformId: platform.id,
+    type: platform.type,
+    direction,
+    verticalDistance: Math.max(0, Math.round(platform.y - playerBottom)),
+    horizontalGap: Math.max(0, Math.round(horizontalGap)),
+  };
+}
+
+export function parseHighScore(value: string | null): number {
+  const parsed = Number.parseInt(value ?? "0", 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
 // 產生新的平台
-function generatePlatform(id: number, y: number, floor: number): Platform {
+export function generatePlatform(
+  id: number,
+  y: number,
+  floor: number,
+  random: () => number = Math.random,
+): Platform {
   const width = Math.max(60, 120 - Math.floor(floor / 10) * 5); // 隨樓層增加變窄
-  const x = Math.random() * (CANVAS_WIDTH - width);
+  const x = random() * (CANVAS_WIDTH - width);
 
   let type: PlatformType = "normal";
-  const r = Math.random();
+  const r = random();
 
   if (floor > 5) {
     if (r < 0.15) type = "spike";
@@ -76,7 +177,10 @@ function generatePlatform(id: number, y: number, floor: number): Platform {
   return { id, x, y, width, type, touched: false, state: 0 };
 }
 
-export function createInitialState(): GameState {
+export function createInitialState(
+  random: () => number = Math.random,
+  storedHighScore?: number,
+): GameState {
   const platforms: Platform[] = [];
   let nextPlatformId = 1;
 
@@ -96,7 +200,8 @@ export function createInitialState(): GameState {
     platforms.push(generatePlatform(
       nextPlatformId++,
       CANVAS_HEIGHT * 0.8 - i * 100,
-      0
+      0,
+      random,
     ));
   }
 
@@ -117,8 +222,18 @@ export function createInitialState(): GameState {
     distance: 0,
     floor: 0,
     scrollSpeed: 60,
-    highScore: typeof localStorage !== "undefined" ? parseInt(localStorage.getItem("nsShaftHighScore") || "0", 10) : 0,
-    nextPlatformId
+    highScore: storedHighScore ?? (
+      typeof localStorage !== "undefined"
+        ? parseHighScore(localStorage.getItem("nsShaftHighScore"))
+        : 0
+    ),
+    nextPlatformId,
+    landings: 0,
+    streak: 0,
+    bestStreak: 0,
+    feedback: "Find the next safe step",
+    feedbackTimer: 0,
+    lastMilestone: 0,
   };
 }
 
@@ -172,10 +287,20 @@ export function tick(state: GameState, deltaMs: number): GameState {
   const dt = deltaMs / 1000;
   const s = { ...state, player: { ...state.player } };
 
-  s.scrollSpeed = getScrollSpeed(s.floor);
+  const previousFloor = s.floor;
+  const previousPace = getPaceProgress(previousFloor);
+  s.scrollSpeed = previousPace.speed;
   const scrollOffset = s.scrollSpeed * dt;
   s.distance += scrollOffset;
   s.floor = Math.floor(s.distance / 120);
+  const currentPace = getPaceProgress(s.floor);
+  s.scrollSpeed = currentPace.speed;
+
+  if (currentPace.level > previousPace.level && s.floor > previousFloor) {
+    s.lastMilestone = currentPace.startFloor;
+    s.feedback = `${currentPace.label} — ${currentPace.speed} px/s!`;
+    s.feedbackTimer = FEEDBACK_SECONDS;
+  }
 
   // 移動所有平台往上
   const activePlatforms: Platform[] = [];
@@ -199,7 +324,10 @@ export function tick(state: GameState, deltaMs: number): GameState {
 
   // 受傷計時
   if (s.player.hurtTimer > 0) {
-    s.player.hurtTimer -= dt;
+    s.player.hurtTimer = Math.max(0, s.player.hurtTimer - dt);
+  }
+  if (s.feedbackTimer > 0) {
+    s.feedbackTimer = Math.max(0, s.feedbackTimer - dt);
   }
 
   // X軸移動
@@ -268,23 +396,49 @@ export function tick(state: GameState, deltaMs: number): GameState {
           // 降落效果
           if (!p.touched) {
             p.touched = true;
-            if (p.type === "normal" || p.type.startsWith("conveyor")) {
+            if (p.type !== "spike") {
+              s.landings += 1;
+              s.streak += 1;
+              s.bestStreak = Math.max(s.bestStreak, s.streak);
+            }
+
+            if (p.type === "normal") {
               s.player.hp = Math.min(MAX_HP, s.player.hp + 1);
+              s.feedback = s.player.hp === MAX_HP ? "Safe landing" : "Safe landing +1 HP";
+              s.feedbackTimer = FEEDBACK_SECONDS;
+            } else if (p.type.startsWith("conveyor")) {
+              s.player.hp = Math.min(MAX_HP, s.player.hp + 1);
+              s.feedback = "Conveyor — hold your course";
+              s.feedbackTimer = FEEDBACK_SECONDS;
             } else if (p.type === "spike") {
               s.player.hp -= 5;
               s.player.hurtTimer = 0.5;
+              s.streak = 0;
+              s.feedback = "Spikes! -5 HP";
+              s.feedbackTimer = FEEDBACK_SECONDS;
             } else if (p.type === "trampoline") {
               s.player.vy = -600; // bounce
               s.player.groundedPlatformId = null;
+              s.feedback = "Super bounce!";
+              s.feedbackTimer = FEEDBACK_SECONDS;
+            } else if (p.type === "fake") {
+              p.state = 0.01;
+              s.feedback = "Cracking step — move!";
+              s.feedbackTimer = FEEDBACK_SECONDS;
             }
           } else {
              if (p.type === "spike" && s.player.hurtTimer <= 0) {
                  s.player.hp -= 5;
                  s.player.hurtTimer = 0.5;
+                 s.streak = 0;
+                 s.feedback = "Spikes! -5 HP";
+                 s.feedbackTimer = FEEDBACK_SECONDS;
              }
              else if (p.type === "trampoline") {
                   s.player.vy = -600; // bounce
-                  s.player.groundedPlatformId = null; 
+                  s.player.groundedPlatformId = null;
+                  s.feedback = "Super bounce!";
+                  s.feedbackTimer = FEEDBACK_SECONDS;
              }
           }
           break;
@@ -304,6 +458,9 @@ export function tick(state: GameState, deltaMs: number): GameState {
     if (s.player.hurtTimer <= 0) {
       s.player.hp -= 3;
       s.player.hurtTimer = 1.0;
+      s.streak = 0;
+      s.feedback = "Ceiling spikes! -3 HP";
+      s.feedbackTimer = FEEDBACK_SECONDS;
     }
     // 掉下平台
     s.player.groundedPlatformId = null;
@@ -312,7 +469,10 @@ export function tick(state: GameState, deltaMs: number): GameState {
 
   // 檢查死亡條件
   if (s.player.hp <= 0 || s.player.y > CANVAS_HEIGHT) {
+    s.player.hp = Math.max(0, s.player.hp);
     s.mode = "gameOver";
+    s.feedback = s.player.hp <= 0 ? "Out of energy" : "Missed the next step";
+    s.feedbackTimer = FEEDBACK_SECONDS;
     if (s.floor > s.highScore) {
       s.highScore = s.floor;
       if (typeof localStorage !== "undefined") {
@@ -327,8 +487,20 @@ export function tick(state: GameState, deltaMs: number): GameState {
 // ---------------- 繪圖函式 ---------------- //
 
 export function drawScene(ctx: CanvasRenderingContext2D, state: GameState): void {
-  // 背景
-  ctx.fillStyle = "#1e1e24";
+  // 深井背景
+  const background = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+  background.addColorStop(0, "#070b16");
+  background.addColorStop(0.55, "#111827");
+  background.addColorStop(1, "#071522");
+  ctx.fillStyle = background;
+  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+  const sideGlow = ctx.createLinearGradient(0, 0, CANVAS_WIDTH, 0);
+  sideGlow.addColorStop(0, "rgba(14,165,233,0.18)");
+  sideGlow.addColorStop(0.18, "rgba(14,165,233,0)");
+  sideGlow.addColorStop(0.82, "rgba(168,85,247,0)");
+  sideGlow.addColorStop(1, "rgba(168,85,247,0.16)");
+  ctx.fillStyle = sideGlow;
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
   // 網格線 (復古感)
@@ -344,7 +516,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, state: GameState): void
 
   // 繪製平台
   for (const plat of state.platforms) {
-    drawPlatform(ctx, plat);
+    drawPlatform(ctx, plat, state.distance);
   }
 
   // 繪製天花板釘子
@@ -356,13 +528,19 @@ export function drawScene(ctx: CanvasRenderingContext2D, state: GameState): void
   // 繪製 HUD
   drawHUD(ctx, state);
 
+  if (state.player.hurtTimer > 0) {
+    const pulse = Math.min(0.22, state.player.hurtTimer * 0.2);
+    ctx.fillStyle = `rgba(239,68,68,${pulse})`;
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  }
+
   // 疊層
   if (state.mode === "ready") drawReadyOverlay(ctx);
   if (state.mode === "paused") drawPausedOverlay(ctx);
   if (state.mode === "gameOver") drawGameOverOverlay(ctx, state);
 }
 
-function drawPlatform(ctx: CanvasRenderingContext2D, p: Platform) {
+function drawPlatform(ctx: CanvasRenderingContext2D, p: Platform, distance: number) {
   if (p.type === "fake" && p.state > 0.5) return; // collapsed
 
   ctx.save();
@@ -385,6 +563,8 @@ function drawPlatform(ctx: CanvasRenderingContext2D, p: Platform) {
       ctx.fillRect(0, 0, p.width, 6);
       ctx.fillStyle = "#22c55e";
       ctx.fillRect(0, 6, p.width, 4);
+      ctx.fillStyle = "rgba(220,252,231,0.55)";
+      for (let i = 8; i < p.width - 4; i += 20) ctx.fillRect(i, 2, 8, 2);
       break;
     
     case "spike":
@@ -406,6 +586,14 @@ function drawPlatform(ctx: CanvasRenderingContext2D, p: Platform) {
       ctx.fillRect(0, 0, p.width, 4); // Jump pad
       ctx.fillStyle = "#d97706";
       ctx.fillRect(10, 4, p.width - 20, 6);
+      ctx.strokeStyle = "#fef3c7";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(12, 4);
+      for (let i = 12; i < p.width - 12; i += 8) {
+        ctx.lineTo(i, i % 16 === 4 ? 4 : 9);
+      }
+      ctx.stroke();
       break;
 
     case "conveyor-left":
@@ -414,7 +602,7 @@ function drawPlatform(ctx: CanvasRenderingContext2D, p: Platform) {
       ctx.fillRect(0, 0, p.width, 8);
       // 動態紋理
       ctx.fillStyle = "#2563eb";
-      const offset = (Date.now() / 10) % 20;
+      const offset = (distance * 0.7) % 20;
       for (let i = -20; i < p.width; i += 20) {
         const dx = p.type === "conveyor-left" ? -offset : offset;
         const xPos = i + dx;
@@ -435,6 +623,15 @@ function drawPlatform(ctx: CanvasRenderingContext2D, p: Platform) {
       ctx.fillRect(0, 0, p.width, 6);
       ctx.fillStyle = "#e11d48";
       ctx.fillRect(0, 6, p.width, 4);
+      ctx.strokeStyle = "#ffe4e6";
+      ctx.lineWidth = 1.5;
+      for (let i = 18; i < p.width; i += 28) {
+        ctx.beginPath();
+        ctx.moveTo(i, 0);
+        ctx.lineTo(i - 3, 4);
+        ctx.lineTo(i + 2, 8);
+        ctx.stroke();
+      }
       break;
   }
 
@@ -599,31 +796,44 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: Player) {
 }
 
 function drawHUD(ctx: CanvasRenderingContext2D, s: GameState) {
-  // 生命條 Background
-  ctx.fillStyle = "rgba(0,0,0,0.6)";
-  ctx.fillRect(10, 30, 160, 24);
-  
-  ctx.fillStyle = "#fff";
-  ctx.font = "bold 14px monospace";
-  ctx.textAlign = "left";
-  ctx.fillText("HP", 16, 47);
+  ctx.fillStyle = "rgba(2,6,23,0.82)";
+  ctx.fillRect(10, 34, 176, 42);
 
-  // 生命格子
-  const barWidth = 10;
+  ctx.fillStyle = "#e2e8f0";
+  ctx.font = "bold 12px monospace";
+  ctx.textAlign = "left";
+  ctx.fillText(`HP ${Math.max(0, s.player.hp)}/${MAX_HP}`, 17, 50);
+
+  const barWidth = 12;
   for (let i = 0; i < Math.floor(s.player.hp); i++) {
-    // 如果快死了變紅，正常是紅到綠
-    ctx.fillStyle = s.player.hp <= 3 ? "#ef4444" : "#fcd34d";
-    ctx.fillRect(40 + i * 11, 34, barWidth, 16);
+    ctx.fillStyle = s.player.hp <= 3 ? "#fb7185" : "#34d399";
+    ctx.fillRect(17 + i * 15, 57, barWidth, 10);
   }
 
-  // 樓層 Floor
-  ctx.fillStyle = "rgba(0,0,0,0.6)";
-  ctx.fillRect(CANVAS_WIDTH - 120, 30, 110, 36);
-  
+  ctx.fillStyle = "rgba(2,6,23,0.82)";
+  ctx.fillRect(CANVAS_WIDTH - 144, 34, 134, 62);
   ctx.fillStyle = "#ecfdf5";
-  ctx.font = "bold 24px monospace";
+  ctx.font = "bold 22px monospace";
   ctx.textAlign = "right";
-  ctx.fillText(`B ${s.floor.toString().padStart(4, '0')}`, CANVAS_WIDTH - 20, 56);
+  ctx.fillText(`B ${s.floor.toString().padStart(4, "0")}`, CANVAS_WIDTH - 18, 58);
+  ctx.fillStyle = "#94a3b8";
+  ctx.font = "bold 11px monospace";
+  ctx.fillText(`BEST B${s.highScore}  ·  STREAK ${s.streak}`, CANVAS_WIDTH - 18, 78);
+  ctx.fillStyle = "#38bdf8";
+  ctx.fillText(`${Math.round(s.scrollSpeed)} PX/S`, CANVAS_WIDTH - 18, 91);
+
+  if (s.feedbackTimer > 0) {
+    ctx.font = "bold 14px monospace";
+    const textWidth = Math.min(CANVAS_WIDTH - 40, ctx.measureText(s.feedback).width + 34);
+    const left = (CANVAS_WIDTH - textWidth) / 2;
+    ctx.fillStyle = "rgba(2,6,23,0.88)";
+    ctx.fillRect(left, CANVAS_HEIGHT - 50, textWidth, 32);
+    ctx.strokeStyle = "rgba(56,189,248,0.6)";
+    ctx.strokeRect(left, CANVAS_HEIGHT - 50, textWidth, 32);
+    ctx.fillStyle = "#e0f2fe";
+    ctx.textAlign = "center";
+    ctx.fillText(s.feedback, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 29);
+  }
 }
 
 function drawReadyOverlay(ctx: CanvasRenderingContext2D) {
@@ -637,6 +847,9 @@ function drawReadyOverlay(ctx: CanvasRenderingContext2D) {
   ctx.fillText("Press SPACE or tap START", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 20);
   ctx.font = "15px monospace";
   ctx.fillText("Hold left/right to move", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 50);
+  ctx.fillStyle = "#7dd3fc";
+  ctx.font = "bold 13px monospace";
+  ctx.fillText("GREEN safe · BLUE conveyor · PINK breaks", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 92);
 }
 
 function drawPausedOverlay(ctx: CanvasRenderingContext2D) {
@@ -647,7 +860,7 @@ function drawPausedOverlay(ctx: CanvasRenderingContext2D) {
   ctx.font = "bold 36px monospace";
   ctx.fillText("PAUSED", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
   ctx.font = "16px monospace";
-  ctx.fillText("Press SPACE or tap RESUME", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 32);
+  ctx.fillText("Press SPACE / P or tap RESUME", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 32);
 }
 
 function drawGameOverOverlay(ctx: CanvasRenderingContext2D, s: GameState) {
@@ -671,6 +884,7 @@ function drawGameOverOverlay(ctx: CanvasRenderingContext2D, s: GameState) {
 
 // 用於 playwright 驗證的狀態輸出
 export function renderGameToText(state: GameState): string {
+  const pace = getPaceProgress(state.floor);
   return JSON.stringify({
     mode: state.mode,
     floor: state.floor,
@@ -678,6 +892,20 @@ export function renderGameToText(state: GameState): string {
     playerX: Math.round(state.player.x),
     playerY: Math.round(state.player.y),
     groundedPlatformId: state.player.groundedPlatformId,
-    numActivePlatforms: state.platforms.length
+    numActivePlatforms: state.platforms.length,
+    landings: state.landings,
+    streak: state.streak,
+    bestStreak: state.bestStreak,
+    feedback: state.feedback,
+    feedbackActive: state.feedbackTimer > 0,
+    scrollSpeed: state.scrollSpeed,
+    pace: {
+      level: pace.level,
+      label: pace.label,
+      nextFloor: pace.nextFloor,
+      floorsRemaining: pace.floorsRemaining,
+      progressPercent: Math.round(pace.percent),
+    },
+    nextLanding: getLandingForecast(state),
   });
 }
