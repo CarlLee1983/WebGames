@@ -97,8 +97,14 @@ export const GAME_REGISTRY: GameDef[] = [
     icon: "i-ph-circles-three-duotone",
     href: "/games/puzzle-bobble",
     color: "bg-fuchsia-500",
-    status: 'beta',
-    qualityVerification: null,
+    status: 'published',
+    qualityVerification: {
+      result: 'passed',
+      baselineVersion: 1,
+      revision: '5cfc09cde365c927f7b4b00eef7abc1d744c5e66',
+      verifiedAt: '2026-07-26',
+      record: 'docs/Games/verification/puzzle-bobble/2026-07-26-v1.md',
+    },
   },
   {
     id: "kids-stair-rush",
@@ -233,5 +239,6 @@ export const GAME_REGISTRY: GameDef[] = [
 ];
 
 export const getPublishedGames = () => GAME_REGISTRY.filter(g => g.status === 'published');
-export const getPlayableGames = () => GAME_REGISTRY.filter(g => ['published', 'beta'].includes(g.status));
+export const isPlayableStatus = (status: GameStatus) => ['published', 'beta'].includes(status);
+export const getPlayableGames = () => GAME_REGISTRY.filter(g => isPlayableStatus(g.status));
 export const getPlannedGames = () => GAME_REGISTRY.filter(g => g.status === 'planned');
